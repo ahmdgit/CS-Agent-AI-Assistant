@@ -1,0 +1,5 @@
+{
+  "name": "CS Agent AI Assistant",
+  "description": "An AI-powered assistant for customer support agents to draft replies, save macros, and translate messages.",
+  "requestFramePermissions": []
+}
