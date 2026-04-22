@@ -1,12 +1,56 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import { DraftResult, Sentiment, CaptainRequestResult, GrammarCheckResult } from '../types';
 
+// Define an array of API keys for fallback route.
+const apiKeys = [
+  "AIzaSyB3yMdd_hbiHfVHuQxgEcnjpQEaz9_Zd0U",
+  "AIzaSyBIDLhrLpZl2r5WqwndDCXmPacpwYg87NE",
+  "AIzaSyD9n7t8sMxoT0V5KcKo5ZtByZnSMfqgftI",
+  "AIzaSyDJmreGlmpXzxJ5rimYlI1k4C7w1QomASc",
+  "AIzaSyDzt0vGp0eqJA65T3uFx0Pp5WDxXANtbaE",
+  process.env.GEMINI_API_KEY // Backup environment variable just in case
+].filter(Boolean) as string[];
+
+let currentApiKeyIndex = 0;
+
 function getAI() {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    throw new Error("API key is missing. Please ensure it is set.");
+  if (apiKeys.length === 0) {
+    throw new Error("No API keys are available.");
   }
+  const apiKey = apiKeys[currentApiKeyIndex];
   return new GoogleGenAI({ apiKey });
+}
+
+// Custom wrapper to execute calls and seamlessly rotate keys on Quota Exhaustion
+async function executeWithFallback<T>(callFunc: (ai: GoogleGenAI) => Promise<T>): Promise<T> {
+  const maxAttempts = apiKeys.length;
+  let attempts = 0;
+  let lastError: any;
+
+  while (attempts < maxAttempts) {
+    try {
+      const ai = getAI();
+      return await callFunc(ai);
+    } catch (err: any) {
+      lastError = err;
+      const errorMessage = err.message || "";
+      // Check if the error is related to Quota or Rate Limits
+      if (
+        errorMessage.includes('429') || 
+        errorMessage.includes('quota') || 
+        errorMessage.includes('RESOURCE_EXHAUSTED')
+      ) {
+        console.warn(`API Key ${currentApiKeyIndex + 1} exhausted. Failing over to next key...`);
+        currentApiKeyIndex = (currentApiKeyIndex + 1) % apiKeys.length; // Move to the next key
+        attempts++;
+      } else {
+        // If it's a different error (like a bad request or 403), throw immediately
+        throw err;
+      }
+    }
+  }
+
+  throw new Error("All available API keys have exhausted their quota: " + (lastError?.message || ""));
 }
 
 export async function generateDraft(
@@ -79,60 +123,53 @@ export async function generateDraft(
 
   let response;
   try {
-    response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: prompt,
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            sentiment: {
-              type: Type.STRING,
-              description: 'The sentiment of the customer message. Must be one of: Angry, Neutral, Happy, Confused, Urgent.',
-            },
-            summary: {
-              type: Type.STRING,
-              description: 'A short title summarizing the issue (max 6 words).',
-            },
-            responses: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING },
-              description: 'Two different professional, empathetic, and clear responses to the user.',
-            },
-            driverResponses: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING },
-              description: 'Two different professional, empathetic, and clear responses to the driver.',
+    response = await executeWithFallback(async (ai) => {
+      try {
+        return await ai.models.generateContent({
+          model: 'gemini-3-flash-preview',
+          contents: prompt,
+          config: {
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                sentiment: { type: Type.STRING, description: 'The sentiment of the customer message. Must be one of: Angry, Neutral, Happy, Confused, Urgent.' },
+                summary: { type: Type.STRING, description: 'A short title summarizing the issue (max 6 words).' },
+                responses: { type: Type.ARRAY, items: { type: Type.STRING }, description: 'Two different professional, empathetic, and clear responses to the user.' },
+                driverResponses: { type: Type.ARRAY, items: { type: Type.STRING }, description: 'Two different professional, empathetic, and clear responses to the driver.' },
+              },
+              required: ['sentiment', 'summary', 'responses', 'driverResponses'],
             },
           },
-          required: ['sentiment', 'summary', 'responses', 'driverResponses'],
-        },
-      },
+        });
+      } catch (err: any) {
+        if (err.message?.includes('403') || err.message?.includes('PERMISSION_DENIED')) {
+          console.warn("gemini-3-flash-preview failed with permission issues, falling back to gemini-2.5-flash");
+          return await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+            config: {
+              responseMimeType: 'application/json',
+              responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                  sentiment: { type: Type.STRING },
+                  summary: { type: Type.STRING },
+                  responses: { type: Type.ARRAY, items: { type: Type.STRING } },
+                  driverResponses: { type: Type.ARRAY, items: { type: Type.STRING } },
+                },
+                required: ['sentiment', 'summary', 'responses', 'driverResponses'],
+              },
+            },
+          });
+        } else {
+          throw err;
+        }
+      }
     });
   } catch (err: any) {
-    if (err.message?.includes('403') || err.message?.includes('PERMISSION_DENIED') || err.message?.includes('429') || err.message?.includes('RESOURCE_EXHAUSTED')) {
-      console.warn("gemini-3-flash-preview failed, falling back to gemini-2.5-flash");
-      response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: prompt,
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              sentiment: { type: Type.STRING },
-              summary: { type: Type.STRING },
-              responses: { type: Type.ARRAY, items: { type: Type.STRING } },
-              driverResponses: { type: Type.ARRAY, items: { type: Type.STRING } },
-            },
-            required: ['sentiment', 'summary', 'responses', 'driverResponses'],
-          },
-        },
-      });
-    } else {
-      throw err;
-    }
+    console.error("All fallbacks exhausted for generateDraft:", err);
+    throw err;
   }
 
   const text = response.text;
@@ -179,23 +216,10 @@ export async function translateText(text: string, targetLanguage: string, onChun
 
   if (onChunk) {
     let fullText = '';
-    try {
-      const responseStream = await ai.models.generateContentStream({
-        model: 'gemini-3-flash-preview',
-        contents: contents,
-      });
-      for await (const chunk of responseStream) {
-        if (chunk.text) {
-          fullText += chunk.text;
-          onChunk(fullText);
-        }
-      }
-      return fullText;
-    } catch (err: any) {
-      if (err.message?.includes('403') || err.message?.includes('PERMISSION_DENIED') || err.message?.includes('429') || err.message?.includes('RESOURCE_EXHAUSTED')) {
-        console.warn("gemini-3-flash-preview failed, falling back to gemini-2.5-flash");
+    await executeWithFallback(async (ai) => {
+      try {
         const responseStream = await ai.models.generateContentStream({
-          model: 'gemini-2.5-flash',
+          model: 'gemini-3-flash-preview',
           contents: contents,
         });
         for await (const chunk of responseStream) {
@@ -204,29 +228,48 @@ export async function translateText(text: string, targetLanguage: string, onChun
             onChunk(fullText);
           }
         }
-        return fullText;
-      } else {
-        throw err;
+      } catch (err: any) {
+         if (err.message?.includes('403') || err.message?.includes('PERMISSION_DENIED')) {
+          const responseStream = await ai.models.generateContentStream({
+            model: 'gemini-2.5-flash',
+            contents: contents,
+          });
+          for await (const chunk of responseStream) {
+            if (chunk.text) {
+              fullText += chunk.text;
+              onChunk(fullText);
+            }
+          }
+        } else {
+          throw err;
+        }
       }
-    }
+    });
+    return fullText;
   }
 
   let response;
   try {
-    response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: contents,
+    response = await executeWithFallback(async (ai) => {
+      try {
+        return await ai.models.generateContent({
+          model: 'gemini-3-flash-preview',
+          contents: contents,
+        });
+      } catch (err: any) {
+        if (err.message?.includes('403') || err.message?.includes('PERMISSION_DENIED')) {
+          return await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: contents,
+          });
+        } else {
+           throw err;
+        }
+      }
     });
   } catch (err: any) {
-    if (err.message?.includes('403') || err.message?.includes('PERMISSION_DENIED') || err.message?.includes('429') || err.message?.includes('RESOURCE_EXHAUSTED')) {
-      console.warn("gemini-3-flash-preview failed, falling back to gemini-2.5-flash");
-      response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: contents,
-      });
-    } else {
-      throw err;
-    }
+    console.error("All API Keys exhausted for translateText.", err);
+    throw err;
   }
 
   return response.text || '';
@@ -248,46 +291,53 @@ export async function generateCaptainRequest(input: string): Promise<CaptainRequ
 
   let response;
   try {
-    response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: prompt,
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            ticketLink: { type: Type.STRING },
-            summary: { type: Type.STRING },
-            validation: { type: Type.STRING },
-            needsFromCaptain: { type: Type.STRING },
+    response = await executeWithFallback(async (ai) => {
+      try {
+        return await ai.models.generateContent({
+          model: 'gemini-3-flash-preview',
+          contents: prompt,
+          config: {
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                ticketLink: { type: Type.STRING },
+                summary: { type: Type.STRING },
+                validation: { type: Type.STRING },
+                needsFromCaptain: { type: Type.STRING },
+              },
+              required: ['ticketLink', 'summary', 'validation', 'needsFromCaptain'],
+            },
           },
-          required: ['ticketLink', 'summary', 'validation', 'needsFromCaptain'],
-        },
-      },
+        });
+      } catch(err: any) {
+        if (err.message?.includes('403') || err.message?.includes('PERMISSION_DENIED')) {
+          console.warn("gemini-3-flash-preview failed, falling back to gemini-2.5-flash");
+          return await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+            config: {
+              responseMimeType: 'application/json',
+              responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                  ticketLink: { type: Type.STRING },
+                  summary: { type: Type.STRING },
+                  validation: { type: Type.STRING },
+                  needsFromCaptain: { type: Type.STRING },
+                },
+                required: ['ticketLink', 'summary', 'validation', 'needsFromCaptain'],
+              },
+            },
+          });
+        } else {
+          throw err;
+        }
+      }
     });
   } catch (err: any) {
-    if (err.message?.includes('403') || err.message?.includes('PERMISSION_DENIED') || err.message?.includes('429') || err.message?.includes('RESOURCE_EXHAUSTED')) {
-      console.warn("gemini-3-flash-preview failed, falling back to gemini-2.5-flash");
-      response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: prompt,
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              ticketLink: { type: Type.STRING },
-              summary: { type: Type.STRING },
-              validation: { type: Type.STRING },
-              needsFromCaptain: { type: Type.STRING },
-            },
-            required: ['ticketLink', 'summary', 'validation', 'needsFromCaptain'],
-          },
-        },
-      });
-    } else {
-      throw err;
-    }
+     console.error("All API fallbacks exhausted for generateCaptainRequest:", err);
+     throw err;
   }
 
   const text = response.text;
@@ -328,23 +378,10 @@ export async function generateTollEstimate(pickup: string, dropoff: string, time
 
   if (onChunk) {
     let fullText = '';
-    try {
-      const responseStream = await ai.models.generateContentStream({
-        model: 'gemini-3-flash-preview',
-        contents: prompt,
-      });
-      for await (const chunk of responseStream) {
-        if (chunk.text) {
-          fullText += chunk.text;
-          onChunk(fullText);
-        }
-      }
-      return fullText;
-    } catch (err: any) {
-      if (err.message?.includes('403') || err.message?.includes('PERMISSION_DENIED') || err.message?.includes('429') || err.message?.includes('RESOURCE_EXHAUSTED')) {
-        console.warn("gemini-3-flash-preview failed, falling back to gemini-2.5-flash");
+    await executeWithFallback(async (ai) => {
+      try {
         const responseStream = await ai.models.generateContentStream({
-          model: 'gemini-2.5-flash',
+          model: 'gemini-3-flash-preview',
           contents: prompt,
         });
         for await (const chunk of responseStream) {
@@ -353,29 +390,48 @@ export async function generateTollEstimate(pickup: string, dropoff: string, time
             onChunk(fullText);
           }
         }
-        return fullText;
-      } else {
-        throw err;
+      } catch(err: any) {
+        if (err.message?.includes('403') || err.message?.includes('PERMISSION_DENIED')) {
+          const responseStream = await ai.models.generateContentStream({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+          });
+          for await (const chunk of responseStream) {
+            if (chunk.text) {
+              fullText += chunk.text;
+              onChunk(fullText);
+            }
+          }
+        } else {
+          throw err;
+        }
       }
-    }
+    });
+    return fullText;
   }
 
   let response;
   try {
-    response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: prompt,
-    });
+     response = await executeWithFallback(async (ai) => {
+       try {
+         return await ai.models.generateContent({
+           model: 'gemini-3-flash-preview',
+           contents: prompt,
+         });
+       } catch(err: any) {
+          if (err.message?.includes('403') || err.message?.includes('PERMISSION_DENIED')) {
+            return await ai.models.generateContent({
+              model: 'gemini-2.5-flash',
+              contents: prompt,
+            });
+          } else {
+            throw err;
+          }
+       }
+     });
   } catch (err: any) {
-    if (err.message?.includes('403') || err.message?.includes('PERMISSION_DENIED') || err.message?.includes('429') || err.message?.includes('RESOURCE_EXHAUSTED')) {
-      console.warn("gemini-3-flash-preview failed, falling back to gemini-2.5-flash");
-      response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: prompt,
-      });
-    } else {
+      console.error("All API Fallbacks exhausted for TollEstimate:", err);
       throw err;
-    }
   }
 
   return response.text || 'Could not generate toll estimate.';
@@ -407,20 +463,26 @@ export async function transcribeAudio(base64Data: string, mimeType: string): Pro
 
   let response;
   try {
-    response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: { parts: [audioPart, textPart] },
+    response = await executeWithFallback(async (ai) => {
+      try {
+        return await ai.models.generateContent({
+          model: 'gemini-3-flash-preview',
+          contents: { parts: [audioPart, textPart] },
+        });
+      } catch(err: any) {
+        if (err.message?.includes('403') || err.message?.includes('PERMISSION_DENIED')) {
+          return await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: { parts: [audioPart, textPart] },
+          });
+        } else {
+          throw err;
+        }
+      }
     });
   } catch (err: any) {
-    if (err.message?.includes('403') || err.message?.includes('PERMISSION_DENIED') || err.message?.includes('429') || err.message?.includes('RESOURCE_EXHAUSTED')) {
-      console.warn("gemini-3-flash-preview failed, falling back to gemini-2.5-flash");
-      response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: { parts: [audioPart, textPart] },
-      });
-    } else {
-      throw err;
-    }
+     console.error("All API fallbacks exhausted for transcribeAudio:", err);
+     throw err;
   }
 
   return response.text || 'Could not transcribe audio.';
@@ -446,23 +508,10 @@ export async function rephraseText(text: string, tone: string, onChunk?: (text: 
 
   if (onChunk) {
     let fullText = '';
-    try {
-      const responseStream = await ai.models.generateContentStream({
-        model: 'gemini-3-flash-preview',
-        contents: contents,
-      });
-      for await (const chunk of responseStream) {
-        if (chunk.text) {
-          fullText += chunk.text;
-          onChunk(fullText);
-        }
-      }
-      return fullText;
-    } catch (err: any) {
-      if (err.message?.includes('403') || err.message?.includes('PERMISSION_DENIED') || err.message?.includes('429') || err.message?.includes('RESOURCE_EXHAUSTED')) {
-        console.warn("gemini-3-flash-preview failed, falling back to gemini-2.5-flash");
+    await executeWithFallback(async (ai) => {
+       try {
         const responseStream = await ai.models.generateContentStream({
-          model: 'gemini-2.5-flash',
+          model: 'gemini-3-flash-preview',
           contents: contents,
         });
         for await (const chunk of responseStream) {
@@ -471,29 +520,48 @@ export async function rephraseText(text: string, tone: string, onChunk?: (text: 
             onChunk(fullText);
           }
         }
-        return fullText;
-      } else {
-        throw err;
+      } catch(err: any) {
+        if (err.message?.includes('403') || err.message?.includes('PERMISSION_DENIED')) {
+           const responseStream = await ai.models.generateContentStream({
+            model: 'gemini-2.5-flash',
+            contents: contents,
+          });
+          for await (const chunk of responseStream) {
+            if (chunk.text) {
+              fullText += chunk.text;
+              onChunk(fullText);
+            }
+          }
+        } else {
+          throw err;
+        }
       }
-    }
+    });
+    return fullText;
   }
 
   let response;
   try {
-    response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: contents,
+    response = await executeWithFallback(async (ai) => {
+      try {
+        return await ai.models.generateContent({
+          model: 'gemini-3-flash-preview',
+          contents: contents,
+        });
+      } catch(err: any) {
+         if (err.message?.includes('403') || err.message?.includes('PERMISSION_DENIED')) {
+          return await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: contents,
+          });
+        } else {
+          throw err;
+        }
+      }
     });
   } catch (err: any) {
-    if (err.message?.includes('403') || err.message?.includes('PERMISSION_DENIED') || err.message?.includes('429') || err.message?.includes('RESOURCE_EXHAUSTED')) {
-      console.warn("gemini-3-flash-preview failed, falling back to gemini-2.5-flash");
-      response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: contents,
-      });
-    } else {
-      throw err;
-    }
+     console.error("All API fallbacks exhausted for rephraseText:", err);
+     throw err;
   }
 
   return response.text || '';
@@ -515,64 +583,41 @@ export async function checkGrammar(text: string, language: string = 'English', t
 
   let response;
   try {
-    response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: prompt,
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            correctedText: { type: Type.STRING },
-            changes: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  original: { type: Type.STRING },
-                  corrected: { type: Type.STRING },
-                  explanation: { type: Type.STRING }
-                },
-                required: ['original', 'corrected', 'explanation']
-              }
+    response = await executeWithFallback(async (ai) => {
+      try {
+        return await ai.models.generateContent({
+          model: 'gemini-2.5-flash',
+          contents: prompt,
+          config: {
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                correctedText: { type: Type.STRING },
+                changes: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      original: { type: Type.STRING },
+                      corrected: { type: Type.STRING },
+                      explanation: { type: Type.STRING }
+                    },
+                    required: ['original', 'corrected', 'explanation']
+                  }
+                }
+              },
+              required: ['correctedText', 'changes']
             }
-          },
-          required: ['correctedText', 'changes']
-        }
+          }
+        });
+      } catch (err: any) {
+         throw err;
       }
     });
   } catch (err: any) {
-    if (err.message?.includes('403') || err.message?.includes('PERMISSION_DENIED') || err.message?.includes('429') || err.message?.includes('RESOURCE_EXHAUSTED')) {
-      console.warn("gemini-3-flash-preview failed, falling back to gemini-2.5-flash");
-      response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: prompt,
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              correctedText: { type: Type.STRING },
-              changes: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    original: { type: Type.STRING },
-                    corrected: { type: Type.STRING },
-                    explanation: { type: Type.STRING }
-                  },
-                  required: ['original', 'corrected', 'explanation']
-                }
-              }
-            },
-            required: ['correctedText', 'changes']
-          }
-        }
-      });
-    } else {
-      throw err;
-    }
+     console.error("All API keys and fallbacks exhausted for checkGrammar:", err);
+     throw err;
   }
 
   const responseText = response.text;

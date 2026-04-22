@@ -31,24 +31,53 @@ export function TutorialModal({ isOpen, onClose }: TutorialModalProps) {
       }
 
       setStatusMessage('Initializing Veo 3...');
-      const apiKey = process.env.GEMINI_API_KEY;
-      if (!apiKey) throw new Error("API key is missing.");
-      const ai = new GoogleGenAI({ apiKey: apiKey });
+      const apiKeys = [
+        "AIzaSyB3yMdd_hbiHfVHuQxgEcnjpQEaz9_Zd0U",
+        "AIzaSyBIDLhrLpZl2r5WqwndDCXmPacpwYg87NE",
+        "AIzaSyD9n7t8sMxoT0V5KcKo5ZtByZnSMfqgftI",
+        "AIzaSyDJmreGlmpXzxJ5rimYlI1k4C7w1QomASc",
+        "AIzaSyDzt0vGp0eqJA65T3uFx0Pp5WDxXANtbaE",
+        process.env.GEMINI_API_KEY
+      ].filter(Boolean) as string[];
+
+      if (apiKeys.length === 0) throw new Error("API key is missing.");
+      
+      let operation: any = null;
+      let usedApiKey = apiKeys[0];
+      
+      for (let i = 0; i < apiKeys.length; i++) {
+        usedApiKey = apiKeys[i];
+        const ai = new GoogleGenAI({ apiKey: usedApiKey });
+        try {
+          operation = await ai.models.generateVideos({
+            model: 'veo-3.1-fast-generate-preview',
+            prompt: 'A professional explainer video showing a customer support agent using an AI assistant dashboard to draft emails, translate text, and manage macros. Cinematic lighting, high quality.',
+            config: {
+              numberOfVideos: 1,
+              resolution: '1080p',
+              aspectRatio: '16:9'
+            }
+          });
+          break; // success
+        } catch (err: any) {
+             const errorMessage = err.message || '';
+             if (errorMessage.includes('429') || errorMessage.includes('quota') || errorMessage.includes('RESOURCE_EXHAUSTED')) {
+                console.warn(`Key ${i+1} exhausted for Veo. Trying next...`);
+                // if it's the last key, it will just drop out and we throw
+                if (i === apiKeys.length - 1) throw err;
+             } else {
+                throw err;
+             }
+        }
+      }
 
       setStatusMessage('Generating video... This may take a few minutes.');
-      let operation = await ai.models.generateVideos({
-        model: 'veo-3.1-fast-generate-preview',
-        prompt: 'A professional explainer video showing a customer support agent using an AI assistant dashboard to draft emails, translate text, and manage macros. Cinematic lighting, high quality.',
-        config: {
-          numberOfVideos: 1,
-          resolution: '1080p',
-          aspectRatio: '16:9'
-        }
-      });
+      // We already fetched the operation successfully above.
 
       while (!operation.done) {
         await new Promise(resolve => setTimeout(resolve, 10000));
-        operation = await ai.operations.getVideosOperation({ operation: operation });
+        const activeAi = new GoogleGenAI({ apiKey: usedApiKey });
+        operation = await activeAi.operations.getVideosOperation({ operation: operation });
       }
 
       const downloadLink = operation.response?.generatedVideos?.[0]?.video?.uri;
@@ -57,7 +86,7 @@ export function TutorialModal({ isOpen, onClose }: TutorialModalProps) {
         const response = await fetch(downloadLink, {
           method: 'GET',
           headers: {
-            'x-goog-api-key': apiKey || '',
+            'x-goog-api-key': usedApiKey || '',
           },
         });
         
