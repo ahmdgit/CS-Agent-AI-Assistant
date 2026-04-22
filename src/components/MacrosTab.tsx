@@ -12,6 +12,7 @@ import { Textarea } from './ui/Textarea';
 export function MacrosTab() {
   const { macros, deleteMacro, editMacro, saveMacro, toggleFavoriteMacro } = useAppContext();
   const [searchQuery, setSearchQuery] = useState('');
+
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'az' | 'za'>('newest');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -31,7 +32,9 @@ export function MacrosTab() {
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+  
+
+  return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
   const filteredMacros = useMemo(() => {
@@ -328,6 +331,26 @@ export function MacrosTab() {
     e.target.value = '';
   };
 
+  useEffect(() => {
+    const onReset = () => {
+      setSearchQuery('');
+      setEditSummary('');
+      setEditResponse('');
+      setNewSummary('');
+      setNewResponse('');
+    };
+    const onCancel = () => {
+      setEditingId(null);
+      setIsCreating(false);
+      onReset();
+    };
+    window.addEventListener('reset-macros', onReset);
+    window.addEventListener('cancel-macros', onCancel);
+    return () => {
+      window.removeEventListener('reset-macros', onReset);
+      window.removeEventListener('cancel-macros', onCancel);
+    };
+  }, []);
   return (
     <div className="space-y-6">
       <div className="sticky top-0 z-10 bg-slate-50/80 backdrop-blur-md pb-4 pt-2 -mt-2">

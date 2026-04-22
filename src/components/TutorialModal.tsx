@@ -31,7 +31,8 @@ export function TutorialModal({ isOpen, onClose }: TutorialModalProps) {
       }
 
       setStatusMessage('Initializing Veo 3...');
-      const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) throw new Error("API key is missing.");
       const ai = new GoogleGenAI({ apiKey: apiKey });
 
       setStatusMessage('Generating video... This may take a few minutes.');
@@ -80,6 +81,9 @@ export function TutorialModal({ isOpen, onClose }: TutorialModalProps) {
           // @ts-ignore
           await window.aistudio.openSelectKey();
         }
+      } else if (errorMessage.includes('429') || errorMessage.includes('quota') || errorMessage.includes('RESOURCE_EXHAUSTED')) {
+        setError('API quota exceeded. Please wait a minute and try again, or add your own API key in Settings.');
+        toast.error('API quota exceeded.');
       } else {
         const msg = err.message || 'Failed to generate video.';
         setError(msg);
@@ -116,6 +120,31 @@ export function TutorialModal({ isOpen, onClose }: TutorialModalProps) {
                 <li className="flex gap-2"><span className="text-indigo-600 font-bold">•</span> <span><strong className="text-slate-800">Calculator:</strong> Perform basic calculations or switch to scientific mode for advanced mathematical operations.</span></li>
                 <li className="flex gap-2"><span className="text-indigo-600 font-bold">•</span> <span><strong className="text-slate-800">Backup & Restore:</strong> Export all your app data (macros, links, templates, updates) to a JSON file and import it later.</span></li>
               </ul>
+            </div>
+
+            <div className="border-t border-slate-100 pt-6">
+              <h3 className="text-lg font-medium text-slate-800 mb-3 flex items-center gap-2">
+                <Info className="w-5 h-5 text-amber-500" />
+                API Limits & How to Fix Them
+              </h3>
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-slate-700 space-y-3">
+                <p>
+                  <strong>Why did the AI stop working?</strong><br/>
+                  This app uses the free tier of the Gemini AI API, which has strict daily and per-minute limits. If you hit this limit, the AI will temporarily pause.
+                </p>
+                <p>
+                  <strong>The Permanent Fix (Use your own API Key):</strong><br/>
+                  To get massive limits, you can use your own Google AI Studio API key.
+                </p>
+                <ol className="list-decimal pl-5 space-y-1">
+                  <li>Ensure you have a valid Gemini API key.</li>
+                  <li>In this app's preview window, open the <strong>Settings / Secrets</strong> panel (usually a gear icon or settings menu in the host environment).</li>
+                  <li>Add your Gemini API key there and restart the app.</li>
+                </ol>
+                <p className="text-xs text-amber-800 mt-2">
+                  <em>Don't want to add a key?</em> The free limits reset every day. You can also stretch your limits by waiting for the AI to finish before clicking generate again, or by batching your requests.
+                </p>
+              </div>
             </div>
 
             <div className="border-t border-slate-100 pt-6">

@@ -11,6 +11,7 @@ export function TollGatesTab() {
   const [pickup, setPickup] = useState('');
   const [dropoff, setDropoff] = useState('');
   const [time, setTime] = useState('');
+  const [tollRate, setTollRate] = useState('4');
   const [isCalculating, setIsCalculating] = useState(false);
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -28,11 +29,16 @@ export function TollGatesTab() {
     setMapRoute({ pickup, dropoff });
 
     try {
-      await generateTollEstimate(pickup, dropoff, time, (chunk) => {
+      await generateTollEstimate(pickup, dropoff, time, tollRate, (chunk) => {
         setResult(chunk);
       });
     } catch (err: any) {
-      setError(err.message || 'Failed to calculate toll estimate. Please try again.');
+      const errorMessage = err?.message || String(err);
+      if (errorMessage.includes('429') || errorMessage.includes('quota') || errorMessage.includes('RESOURCE_EXHAUSTED')) {
+        setError('API quota exceeded. Please wait a minute and try again, or add your own API key in Settings.');
+      } else {
+        setError(errorMessage || 'Failed to calculate toll estimate. Please try again.');
+      }
     } finally {
       setIsCalculating(false);
     }
@@ -86,6 +92,22 @@ export function TollGatesTab() {
               leftIcon={<Clock className="w-5 h-5" />}
             />
             <p className="text-xs text-slate-500 mt-1">Time is important as Darb tolls depend on peak hours.</p>
+
+            <div className="space-y-1.5">
+              <label className="block text-sm font-medium text-slate-700">Toll Rate per Gate</label>
+              <select
+                value={tollRate}
+                onChange={(e) => setTollRate(e.target.value)}
+                className="w-full h-10 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              >
+                <option value="4">4 AED (Official Government Rate)</option>
+                <option value="5">5 AED (Includes 1 AED Company Surcharge)</option>
+                <option value="6">6 AED (Includes 2 AED Company Surcharge)</option>
+              </select>
+              <p className="text-xs text-slate-500">
+                <strong>Tip:</strong> The actual government cost is always 4 AED. Leave it at 4 AED unless your specific company adds a surcharge to the customer's bill.
+              </p>
+            </div>
           </div>
 
           {error && (
@@ -128,10 +150,32 @@ export function TollGatesTab() {
         <div className="space-y-6">
           {/* Yandex Map Section */}
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-            <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
-              <Map className="w-5 h-5 text-indigo-600" />
-              Route Map (Yandex)
-            </h3>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <Map className="w-5 h-5 text-indigo-600" />
+                Track Route
+              </h3>
+              {mapRoute && (
+                <div className="flex flex-wrap gap-3">
+                  <a
+                    href={`https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(mapRoute.pickup)}&destination=${encodeURIComponent(mapRoute.dropoff)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-indigo-600 hover:text-indigo-800 flex items-center gap-1 font-medium bg-indigo-50 px-2 py-1 rounded-md"
+                  >
+                    Google Maps <ExternalLink className="w-3 h-3" />
+                  </a>
+                  <a
+                    href={`https://yandex.com/maps/?rtext=${encodeURIComponent(mapRoute.pickup)}~${encodeURIComponent(mapRoute.dropoff)}&rtt=auto`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-indigo-600 hover:text-indigo-800 flex items-center gap-1 font-medium bg-indigo-50 px-2 py-1 rounded-md"
+                  >
+                    Yandex Maps <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+              )}
+            </div>
             <div className="w-full h-[300px] rounded-lg overflow-hidden relative bg-slate-100 border border-slate-200">
               {mapRoute ? (
                 <iframe
@@ -175,13 +219,14 @@ export function TollGatesTab() {
             <div className="space-y-3 text-sm text-slate-600">
               <p><strong>Cost:</strong> 4 AED per crossing.</p>
               <p><strong>Peak Times:</strong> <span className="font-semibold text-indigo-600">None.</span> Dubai charges a flat rate 24/7.</p>
-              <p><strong>Gates (8):</strong> Al Barsha, Al Garhoud, Al Maktoum, Al Safa, Airport Tunnel, Al Mamzar South, Al Mamzar North, Jebel Ali.</p>
+              <p><strong>Gates (10):</strong> Al Barsha, Al Garhoud, Al Maktoum, Al Safa, Airport Tunnel, Al Mamzar South, Al Mamzar North, Jebel Ali, Business Bay Crossing, Al Safa South.</p>
               <div className="p-3 bg-orange-50 rounded-lg border border-orange-100 text-orange-800">
                 <p className="font-medium mb-1 flex items-center gap-1">
                   <Info className="w-4 h-4" /> Important Rules
                 </p>
                 <ul className="list-disc pl-5 space-y-1">
                   <li>Al Mamzar North & South: Charged once if crossed in the same direction within 1 hour.</li>
+                  <li>Al Safa & Al Safa South: Charged once if crossed in the same direction within 1 hour.</li>
                   <li>Al Maktoum Bridge: Toll-free from 10:00 PM to 6:00 AM (Mon-Sat) and all day Sunday.</li>
                   <li>Maximum daily cap: None.</li>
                 </ul>

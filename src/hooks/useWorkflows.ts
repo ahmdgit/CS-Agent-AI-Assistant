@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
-import { LinkItem } from '../types';
-import { collection, onSnapshot, doc, setDoc, deleteDoc, updateDoc, query, orderBy, where } from 'firebase/firestore';
+import { Workflow } from '../types';
+import { collection, onSnapshot, doc, setDoc, deleteDoc, updateDoc, query, where } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import toast from 'react-hot-toast';
 
-export function useLinks() {
-  const [links, setLinks] = useState<LinkItem[]>([]);
+export function useWorkflows() {
+  const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [userId, setUserId] = useState<string | null>(auth?.currentUser?.uid || null);
 
   useEffect(() => {
@@ -17,12 +17,12 @@ export function useLinks() {
     return () => unsubscribe();
   }, []);
 
-  // Migrate local links to Firebase
+  // Migrate local workflows to Firebase
   useEffect(() => {
     if (!db || !userId) return;
     
     const migrateLocalData = async () => {
-      const keysToCheck = ['links', 'savedLinks', 'cs-agent-links'];
+      const keysToCheck = ['workflows', 'savedWorkflows', 'cs-agent-workflows'];
       for (const key of keysToCheck) {
         const localDataStr = localStorage.getItem(key);
         if (localDataStr) {
@@ -31,14 +31,16 @@ export function useLinks() {
             if (Array.isArray(localData) && localData.length > 0) {
               let migratedCount = 0;
               for (const item of localData) {
-                if (item.url && item.description) {
+                if (item.name && item.nodes) {
                   const newId = item.id || crypto.randomUUID();
-                  const docRef = doc(db, 'links', newId);
+                  const docRef = doc(db, 'workflows', newId);
                   
                   const newItem = {
                     id: newId,
-                    url: item.url,
-                    description: item.description,
+                    name: item.name,
+                    description: item.description || '',
+                    nodes: item.nodes,
+                    startingNodeId: item.startingNodeId || null,
                     userId: userId,
                     dateAdded: typeof item.dateAdded === 'string' ? item.dateAdded : new Date(item.dateAdded || Date.now()).toISOString(),
                     ...(item.isFavorite !== undefined ? { isFavorite: item.isFavorite } : {})
@@ -48,7 +50,7 @@ export function useLinks() {
                 }
               }
               if (migratedCount > 0) {
-                toast.success(`Restored ${migratedCount} links from local storage!`);
+                toast.success(`Restored ${migratedCount} workflows from local storage!`);
               }
             }
             localStorage.setItem(`${key}_migrated`, localDataStr);
@@ -65,74 +67,77 @@ export function useLinks() {
 
   useEffect(() => {
     if (!db || !userId) {
-      setLinks([]);
+      setWorkflows([]);
       return;
     }
 
     const q = query(
-      collection(db, 'links'), 
+      collection(db, 'workflows'), 
       where('userId', '==', userId)
     );
+    
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const linksData: LinkItem[] = [];
+      const data: Workflow[] = [];
       snapshot.forEach((doc) => {
-        linksData.push({ id: doc.id, ...doc.data() } as LinkItem);
+        data.push({ id: doc.id, ...doc.data() } as Workflow);
       });
-
-      // Sort in memory to avoid requiring a composite index
-      linksData.sort((a, b) => new Date(b.dateAdded).getTime() - new Date(a.dateAdded).getTime());
-
-      setLinks(linksData);
+      
+      data.sort((a, b) => new Date(b.dateAdded).getTime() - new Date(a.dateAdded).getTime());
+      
+      setWorkflows(data);
     }, (error) => {
-      console.error('Failed to fetch links from Firebase', error);
+      console.error('Failed to fetch workflows', error);
     });
 
     return () => unsubscribe();
   }, [userId]);
 
-  const addLink = async (url: string, description: string) => {
+  const saveWorkflow = async (workflow: Omit<Workflow, 'id' | 'dateAdded' | 'userId'>) => {
     if (!db || !auth?.currentUser) return;
     const id = crypto.randomUUID();
-    const newLink = {
+    const newWorkflow: Workflow = {
+      ...workflow,
       id,
-      url,
-      description,
       dateAdded: new Date().toISOString(),
       userId: auth.currentUser.uid
     };
     try {
-      await setDoc(doc(db, 'links', id), newLink);
+      await setDoc(doc(db, 'workflows', id), newWorkflow);
     } catch (e) {
-      console.error('Failed to save link', e);
+      console.error('Failed to save workflow', e);
+      throw e;
     }
   };
 
-  const editLink = async (id: string, url: string, description: string) => {
+  const editWorkflow = async (id: string, updates: Partial<Workflow>) => {
     if (!db || !auth?.currentUser) return;
     try {
-      await updateDoc(doc(db, 'links', id), { url, description });
+      await updateDoc(doc(db, 'workflows', id), updates);
     } catch (e) {
-      console.error('Failed to edit link', e);
+      console.error('Failed to edit workflow', e);
+      throw e;
     }
   };
 
-  const deleteLink = async (id: string) => {
+  const deleteWorkflow = async (id: string) => {
     if (!db || !auth?.currentUser) return;
     try {
-      await deleteDoc(doc(db, 'links', id));
+      await deleteDoc(doc(db, 'workflows', id));
     } catch (e) {
-      console.error('Failed to delete link', e);
+      console.error('Failed to delete workflow', e);
+      throw e;
     }
   };
 
-  const toggleFavorite = async (id: string, currentStatus: boolean) => {
+  const toggleFavoriteWorkflow = async (id: string, currentStatus: boolean) => {
     if (!db || !auth?.currentUser) return;
     try {
-      await updateDoc(doc(db, 'links', id), { isFavorite: !currentStatus });
+      await updateDoc(doc(db, 'workflows', id), { isFavorite: !currentStatus });
     } catch (e) {
       console.error('Failed to toggle favorite', e);
+      throw e;
     }
   };
 
-  return { links, addLink, editLink, deleteLink, toggleFavorite };
+  return { workflows, saveWorkflow, editWorkflow, deleteWorkflow, toggleFavoriteWorkflow };
 }

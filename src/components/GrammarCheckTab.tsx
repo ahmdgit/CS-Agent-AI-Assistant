@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { checkGrammar } from '../services/geminiService';
 import { GrammarCheckResult } from '../types';
 import { Copy, CheckCircle2, RotateCcw, SpellCheck, Check, Info, X } from 'lucide-react';
@@ -9,6 +9,7 @@ import { Textarea } from './ui/Textarea';
 
 export function GrammarCheckTab() {
   const [input, setInput] = useState('');
+
   const [language, setLanguage] = useState<'English' | 'Arabic'>('English');
   const [tone, setTone] = useState<'Neutral' | 'Professional' | 'Empathetic' | 'Concise'>('Neutral');
   const [isLoading, setIsLoading] = useState(false);
@@ -25,9 +26,14 @@ export function GrammarCheckTab() {
       const checkResult = await checkGrammar(input, language, tone);
       setResult(checkResult);
       setEditedText(checkResult.correctedText);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error checking grammar:', error);
-      toast.error('Failed to check grammar. Please try again.');
+      const errorMessage = error?.message || String(error);
+      if (errorMessage.includes('429') || errorMessage.includes('quota') || errorMessage.includes('RESOURCE_EXHAUSTED')) {
+        toast.error('API quota exceeded. Please wait a minute and try again, or add your own API key in Settings.', { duration: 6000 });
+      } else {
+        toast.error('Failed to check grammar. Please try again.');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -49,6 +55,18 @@ export function GrammarCheckTab() {
     setIsCopied(false);
   };
 
+
+
+  useEffect(() => {
+    const onReset = () => handleReset();
+    const onCancel = () => handleReset();
+    window.addEventListener('reset-grammar', onReset);
+    window.addEventListener('cancel-grammar', onCancel);
+    return () => {
+      window.removeEventListener('reset-grammar', onReset);
+      window.removeEventListener('cancel-grammar', onCancel);
+    };
+  }, []);
   return (
     <div className="space-y-6">
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
@@ -63,7 +81,7 @@ export function GrammarCheckTab() {
         </p>
         <div className="relative">
           <Textarea
-            className="h-32 resize-none pr-10"
+            className="h-32 resize-y pr-10"
             placeholder="Paste text here to check..."
             value={input}
             maxLength={5000}
@@ -175,7 +193,7 @@ export function GrammarCheckTab() {
               <Textarea
                 value={editedText}
                 onChange={(e) => setEditedText(e.target.value)}
-                className={`h-40 resize-none bg-slate-50 ${language === 'Arabic' ? 'text-right' : 'text-left'}`}
+                className={`min-h-[160px] h-40 resize-y bg-slate-50 ${language === 'Arabic' ? 'text-right' : 'text-left'}`}
                 dir={language === 'Arabic' ? 'rtl' : 'ltr'}
               />
             </div>

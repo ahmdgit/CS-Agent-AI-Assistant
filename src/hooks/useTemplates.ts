@@ -3,6 +3,7 @@ import { Template } from '../types';
 import { collection, onSnapshot, doc, setDoc, deleteDoc, updateDoc, query, orderBy, where } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
+import toast from 'react-hot-toast';
 
 const DEFAULT_TEMPLATES = [
   {
@@ -29,6 +30,52 @@ export function useTemplates() {
     });
     return () => unsubscribe();
   }, []);
+
+  // Migrate local templates to Firebase
+  useEffect(() => {
+    if (!db || !userId) return;
+    
+    const migrateLocalData = async () => {
+      const keysToCheck = ['templates', 'savedTemplates', 'cs-agent-templates'];
+      for (const key of keysToCheck) {
+        const localDataStr = localStorage.getItem(key);
+        if (localDataStr) {
+          try {
+            const localData = JSON.parse(localDataStr);
+            if (Array.isArray(localData) && localData.length > 0) {
+              let migratedCount = 0;
+              for (const item of localData) {
+                if (item.name && item.fields) {
+                  const newId = item.id || crypto.randomUUID();
+                  const docRef = doc(db, 'templates', newId);
+                  
+                  const newItem = {
+                    id: newId,
+                    name: item.name,
+                    fields: item.fields,
+                    userId: userId,
+                    dateAdded: typeof item.dateAdded === 'number' ? item.dateAdded : Date.now(),
+                    ...(item.isFavorite !== undefined ? { isFavorite: item.isFavorite } : {})
+                  };
+                  await setDoc(docRef, newItem, { merge: true });
+                  migratedCount++;
+                }
+              }
+              if (migratedCount > 0) {
+                toast.success(`Restored ${migratedCount} templates from local storage!`);
+              }
+            }
+            localStorage.setItem(`${key}_migrated`, localDataStr);
+            localStorage.removeItem(key);
+          } catch (e) {
+            console.error(`Failed to migrate local data for key ${key}`, e);
+          }
+        }
+      }
+    };
+
+    migrateLocalData();
+  }, [userId]);
 
   useEffect(() => {
     if (!db || !userId) {

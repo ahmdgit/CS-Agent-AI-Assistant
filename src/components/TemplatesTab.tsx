@@ -13,6 +13,7 @@ import { Modal } from './ui/Modal';
 export function TemplatesTab() {
   const { templates, addTemplate, editTemplate, deleteTemplate, toggleFavoriteTemplate } = useAppContext();
   const [activeTemplateId, setActiveTemplateId] = useState<string>(templates[0]?.id || '');
+
   const [formValues, setFormValues] = useState<Record<string, string>>({});
   const [isCopied, setIsCopied] = useState(false);
 
@@ -129,7 +130,9 @@ export function TemplatesTab() {
   };
 
   if (isEditing) {
-    return (
+  
+
+  return (
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 animate-in fade-in duration-300">
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-lg font-semibold text-slate-800">
@@ -240,6 +243,23 @@ export function TemplatesTab() {
     );
   }
 
+  useEffect(() => {
+    const onReset = () => {
+      setEditName('');
+      setEditFields([]);
+    };
+    const onCancel = () => {
+      setIsEditing(false);
+      setEditTemplateId(null);
+      onReset();
+    };
+    window.addEventListener('reset-templates', onReset);
+    window.addEventListener('cancel-templates', onCancel);
+    return () => {
+      window.removeEventListener('reset-templates', onReset);
+      window.removeEventListener('cancel-templates', onCancel);
+    };
+  }, []);
   return (
     <div className="space-y-6">
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">

@@ -2,7 +2,7 @@ import { GoogleGenAI, Type } from '@google/genai';
 import { DraftResult, Sentiment, CaptainRequestResult, GrammarCheckResult } from '../types';
 
 function getAI() {
-  const apiKey = (import.meta as any).env.VITE_GEMINI_API_KEY || process.env.API_KEY || process.env.GEMINI_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new Error("API key is missing. Please ensure it is set.");
   }
@@ -14,29 +14,73 @@ export async function generateDraft(
   draftInput: string,
   tone: 'Professional' | 'Empathy Professional' = 'Professional',
   language: 'English' | 'Arabic' = 'English',
-  replyTo: 'Customer' | 'Driver' | 'Both' = 'Both'
+  replyTo: 'Customer' | 'Driver' | 'Both' = 'Both',
+  replyLength: string = 'Auto',
+  agentName: string = '',
+  company: string = 'Yango',
+  includeGreeting: boolean = true,
+  includeEnding: boolean = true
 ): Promise<DraftResult> {
   const ai = getAI();
+
+  const englishGreeting = `Hi,\n\nThank you for contacting us. I'm ${agentName || '[Name]'} from the ${company} support team, and I'm happy to help you with your problem.`;
+  const arabicGreeting = `مرحباً،\n\nشكراً لتواصلك معنا. أنا ${agentName || '[الاسم]'} من فريق دعم ${company}، ويسعدني مساعدتك في حل مشكلتك.`;
+  const greetingText = language === 'Arabic' ? arabicGreeting : englishGreeting;
+
+  const englishClosing = `If you need any further assistance, please don't hesitate to reach out to us.\n\nThank you for contacting ${company} customer support! We would greatly appreciate it if you could rate your experience with us in this chat (5 being the highest). Your feedback is incredibly valuable and helps us serve you better.\n\nHave a wonderful day!`;
+  
+  const arabicClosing = `إذا احتجت أي مساعدة إضافية، فلا تتردد في التواصل معنا في أي وقت.\n\nشكراً لتواصلك مع خدمة عملاء ${company}! نرجو منك التكرم بتقييم تجربتك معنا في هذه الدردشة (حيث 5 هو التقييم الأعلى). ملاحظاتك تهمنا جداً وتساعدنا على تقديم خدمة أفضل لك دائماً.\n\nنتمنى لك يوماً سعيداً!`;
+
+  const closingText = language === 'Arabic' ? arabicClosing : englishClosing;
+
   const prompt = `
-    You are an expert Customer Support Agent.
-    The user provided the following full conversation history (between user and driver/agent): "${summaryInput}"
-    ${draftInput ? `The agent needs to say the following points (draft/bullet points): "${draftInput}"` : ''}
-    
-    Task 1: Analyze the sentiment of the customer in the conversation.
-    Task 2: Summarize the issue into a short title (max 6 words).
-    ${replyTo === 'Customer' || replyTo === 'Both' ? `Task 3: Write TWO different ${tone.toLowerCase()} and clear responses to the CUSTOMER. Give them as an array.` : `Task 3: You MUST return an empty array [] for the CUSTOMER responses.`}
-    ${replyTo === 'Driver' || replyTo === 'Both' ? `Task 4: Write TWO different ${tone.toLowerCase()} and clear responses to the DRIVER. Give them as an array.` : `Task 4: You MUST return an empty array [] for the DRIVER responses.`}
-    
-    CRITICAL RULES:
-    - DO NOT repeat what the user or driver already said.
-    - Stick STRICTLY to the points provided in the draft/bullet points (if provided).
-    - The responses in Task 3 and Task 4 MUST be written in ${language}.
+    You are an elite, world-class Customer Support Specialist. Your goal is to draft the perfect, most effective response that maximizes Customer Satisfaction (CSAT) and resolves the issue efficiently.
+
+    === INPUT CONTEXT ===
+    Conversation History: "${summaryInput}"
+    ${draftInput ? `Required Resolution/Action Points (You MUST include these in your reply): "${draftInput}"` : 'No specific resolution points provided. Infer the best standard support response based on the conversation.'}
+    Target Audience: ${replyTo}
+    Tone: ${tone}
+    Language: ${language}
+    ${agentName ? `Agent Name: ${agentName}` : ''}
+    Company: ${company}
+    ${replyLength !== 'Auto' ? `Length Constraint: Exactly ${replyLength} sentences (excluding the greeting and closing).` : ''}
+
+    === TASKS ===
+    Task 1: Analyze the customer's sentiment (Angry, Neutral, Happy, Confused, Urgent).
+    Task 2: Create a concise, 6-word max summary of the core issue.
+    ${replyTo === 'Customer' || replyTo === 'Both' ? `Task 3: Write TWO distinct, highly polished responses to the CUSTOMER.` : `Task 3: Return an empty array [] for CUSTOMER responses.`}
+    ${replyTo === 'Driver' || replyTo === 'Both' ? `Task 4: Write TWO distinct, highly polished, clear, and directive responses to the DRIVER.` : `Task 4: Return an empty array [] for DRIVER responses.`}
+
+    === CRITICAL GUIDELINES FOR REPLIES ===
+    1. DIRECT COMMUNICATION (NO INSTRUCTIONS):
+       - You are writing the EXACT message the support agent will copy and paste to the recipient.
+       - DO NOT write instructions for the agent (e.g., do NOT write "Inform the driver to..." or "Tell the customer that...").
+       - Write directly TO the recipient using "you" (e.g., "Please restart your app...").
+       - Use "I" or "we" to refer to the support team.
+    2. STRUCTURE & FORMATTING (MANDATORY):
+       - DO NOT write a single block of text. You MUST use paragraph breaks (empty lines) to separate sections.
+       - SPACING RULE: You MUST leave a blank empty line between the Greeting, the Body, and the Closing.
+       ${includeGreeting ? `- Greeting: Start with the following EXACT greeting message in a NEW paragraph:\n         "${greetingText}"\n\n` : '- Greeting: DO NOT include any greeting or introduction. Start directly with the acknowledgment.'}
+       - Acknowledge & Validate: In a NEW paragraph, briefly acknowledge their specific situation and apologize if appropriate (e.g., "I am sorry to hear you are not receiving bookings.").
+       - Resolve: In a NEW paragraph, clearly deliver the solution using the "Required Resolution/Action Points". Explain the "why" if provided. Use bullet points if there are multiple steps.
+       ${includeEnding ? `\n\n       - Close: End with the following EXACT closing message in a NEW paragraph:\n         "${closingText}"` : '- Close: DO NOT include any closing message, sign-off, or ending. End immediately after the resolution.'}
+    3. TONE RULES:
+       - Sound HUMAN, natural, and conversational. Avoid robotic phrases like "rectify this situation" or "prompt cooperation". Use simple, friendly language.
+       - "Professional": Direct, clear, polite, and solution-oriented.
+       - "Empathy Professional": Warm, understanding, and highly apologetic if something went wrong. Validate their feelings before giving the solution.
+    4. PERSONALIZATION: Use specific details from the conversation so it doesn't sound generic. DO NOT just parrot the conversation back.
+    5. DRIVER REPLIES: If writing to a driver, be extremely clear, directive, and respectful. Use bullet points if helpful. Remember, write DIRECTLY to the driver.
+    6. LANGUAGE: All replies MUST be written in ${language}.
+    ${replyLength !== 'Auto' ? `7. LENGTH: You MUST write EXACTLY ${replyLength} sentences for the main body (excluding the provided greeting and closing). Count your punctuation marks carefully.` : '7. LENGTH: Keep it concise but well-structured.'}
+    8. DO NOT REPEAT WORDS: Do NOT repeat the exact words or phrases used by the rider or driver. Rephrase and summarize their issue professionally.
+    9. NO BLAME: Do NOT blame the company (${company}) or its systems/policies for the issue under any circumstances. Take ownership politely without pointing fingers.
   `;
 
   let response;
   try {
     response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3-flash-preview',
       contents: prompt,
       config: {
         responseMimeType: 'application/json',
@@ -67,8 +111,8 @@ export async function generateDraft(
       },
     });
   } catch (err: any) {
-    if (err.message?.includes('403') || err.message?.includes('PERMISSION_DENIED')) {
-      console.warn("gemini-3-flash-preview failed with 403, falling back to gemini-2.5-flash");
+    if (err.message?.includes('403') || err.message?.includes('PERMISSION_DENIED') || err.message?.includes('429') || err.message?.includes('RESOURCE_EXHAUSTED')) {
+      console.warn("gemini-3-flash-preview failed, falling back to gemini-2.5-flash");
       response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
         contents: prompt,
@@ -148,8 +192,8 @@ export async function translateText(text: string, targetLanguage: string, onChun
       }
       return fullText;
     } catch (err: any) {
-      if (err.message?.includes('403') || err.message?.includes('PERMISSION_DENIED')) {
-        console.warn("gemini-3-flash-preview failed with 403, falling back to gemini-2.5-flash");
+      if (err.message?.includes('403') || err.message?.includes('PERMISSION_DENIED') || err.message?.includes('429') || err.message?.includes('RESOURCE_EXHAUSTED')) {
+        console.warn("gemini-3-flash-preview failed, falling back to gemini-2.5-flash");
         const responseStream = await ai.models.generateContentStream({
           model: 'gemini-2.5-flash',
           contents: contents,
@@ -174,8 +218,8 @@ export async function translateText(text: string, targetLanguage: string, onChun
       contents: contents,
     });
   } catch (err: any) {
-    if (err.message?.includes('403') || err.message?.includes('PERMISSION_DENIED')) {
-      console.warn("gemini-3-flash-preview failed with 403, falling back to gemini-2.5-flash");
+    if (err.message?.includes('403') || err.message?.includes('PERMISSION_DENIED') || err.message?.includes('429') || err.message?.includes('RESOURCE_EXHAUSTED')) {
+      console.warn("gemini-3-flash-preview failed, falling back to gemini-2.5-flash");
       response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
         contents: contents,
@@ -205,7 +249,7 @@ export async function generateCaptainRequest(input: string): Promise<CaptainRequ
   let response;
   try {
     response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3-flash-preview',
       contents: prompt,
       config: {
         responseMimeType: 'application/json',
@@ -222,8 +266,8 @@ export async function generateCaptainRequest(input: string): Promise<CaptainRequ
       },
     });
   } catch (err: any) {
-    if (err.message?.includes('403') || err.message?.includes('PERMISSION_DENIED')) {
-      console.warn("gemini-3-flash-preview failed with 403, falling back to gemini-2.5-flash");
+    if (err.message?.includes('403') || err.message?.includes('PERMISSION_DENIED') || err.message?.includes('429') || err.message?.includes('RESOURCE_EXHAUSTED')) {
+      console.warn("gemini-3-flash-preview failed, falling back to gemini-2.5-flash");
       response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
         contents: prompt,
@@ -259,19 +303,25 @@ export async function generateCaptainRequest(input: string): Promise<CaptainRequ
   }
 }
 
-export async function generateTollEstimate(pickup: string, dropoff: string, time: string, onChunk?: (text: string) => void): Promise<string> {
+export async function generateTollEstimate(pickup: string, dropoff: string, time: string, tollRate: string, onChunk?: (text: string) => void): Promise<string> {
   const ai = getAI();
   const prompt = `
     You are an expert on UAE toll gates (Salik in Dubai and Darb in Abu Dhabi).
     A user wants to travel from "${pickup}" to "${dropoff}" at "${time}".
     
     Based on typical routes between these locations, estimate:
-    1. Which specific toll gates (Salik and/or Darb) they are likely to cross.
-    2. The estimated total cost in AED.
+    1. The typical route or track taken between these two locations.
+    2. Which specific toll gates (Salik and/or Darb) they are likely to cross along this track.
+    3. The estimated total cost in AED.
     
     Keep in mind:
-    - Salik (Dubai) is a flat 4 AED per gate at all times (NO peak time pricing), except Al Maktoum Bridge which is free from 10 PM to 6 AM (Mon-Sat) and all day Sunday.
-    - Darb (Abu Dhabi) is 4 AED per gate ONLY during peak hours (Mon-Sat 7-9 AM, 5-7 PM). It is free outside these hours and on Sundays/Public Holidays.
+    - The user has specified that the toll rate to calculate with is ${tollRate} AED per gate. Use this rate for your calculations.
+    - Salik (Dubai) has 10 gates: Al Barsha, Al Garhoud, Al Maktoum, Al Safa, Airport Tunnel, Al Mamzar South, Al Mamzar North, Jebel Ali, Business Bay Crossing, and Al Safa South.
+    - Salik is a flat ${tollRate} AED per gate at all times (NO peak time pricing).
+    - Al Maktoum Bridge is free from 10 PM to 6 AM (Mon-Sat) and all day Sunday.
+    - Al Mamzar North & South are charged once if crossed in the same direction within 1 hour.
+    - Al Safa & Al Safa South are charged once if crossed in the same direction within 1 hour.
+    - Darb (Abu Dhabi) is ${tollRate} AED per gate ONLY during peak hours (Mon-Sat 7-9 AM, 5-7 PM). It is free outside these hours and on Sundays/Public Holidays.
     
     Provide a clear, concise, and professional summary of the expected toll gates and the total cost. Format it nicely using Markdown.
   `;
@@ -291,8 +341,8 @@ export async function generateTollEstimate(pickup: string, dropoff: string, time
       }
       return fullText;
     } catch (err: any) {
-      if (err.message?.includes('403') || err.message?.includes('PERMISSION_DENIED')) {
-        console.warn("gemini-3-flash-preview failed with 403, falling back to gemini-2.5-flash");
+      if (err.message?.includes('403') || err.message?.includes('PERMISSION_DENIED') || err.message?.includes('429') || err.message?.includes('RESOURCE_EXHAUSTED')) {
+        console.warn("gemini-3-flash-preview failed, falling back to gemini-2.5-flash");
         const responseStream = await ai.models.generateContentStream({
           model: 'gemini-2.5-flash',
           contents: prompt,
@@ -317,8 +367,8 @@ export async function generateTollEstimate(pickup: string, dropoff: string, time
       contents: prompt,
     });
   } catch (err: any) {
-    if (err.message?.includes('403') || err.message?.includes('PERMISSION_DENIED')) {
-      console.warn("gemini-3-flash-preview failed with 403, falling back to gemini-2.5-flash");
+    if (err.message?.includes('403') || err.message?.includes('PERMISSION_DENIED') || err.message?.includes('429') || err.message?.includes('RESOURCE_EXHAUSTED')) {
+      console.warn("gemini-3-flash-preview failed, falling back to gemini-2.5-flash");
       response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
         contents: prompt,
@@ -362,8 +412,8 @@ export async function transcribeAudio(base64Data: string, mimeType: string): Pro
       contents: { parts: [audioPart, textPart] },
     });
   } catch (err: any) {
-    if (err.message?.includes('403') || err.message?.includes('PERMISSION_DENIED')) {
-      console.warn("gemini-3-flash-preview failed with 403, falling back to gemini-2.5-flash");
+    if (err.message?.includes('403') || err.message?.includes('PERMISSION_DENIED') || err.message?.includes('429') || err.message?.includes('RESOURCE_EXHAUSTED')) {
+      console.warn("gemini-3-flash-preview failed, falling back to gemini-2.5-flash");
       response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
         contents: { parts: [audioPart, textPart] },
@@ -376,8 +426,81 @@ export async function transcribeAudio(base64Data: string, mimeType: string): Pro
   return response.text || 'Could not transcribe audio.';
 }
 
-export async function checkGrammar(text: string, language: string = 'English', tone: string = 'Neutral'): Promise<GrammarCheckResult> {
+export async function rephraseText(text: string, tone: string, onChunk?: (text: string) => void): Promise<string> {
+  const ai = getAI();
+  const prompt = `
+    You are an expert copywriter and editor.
+    Please rephrase the following text to have a "${tone}" tone.
+    
+    Original Text:
+    "${text}"
+    
+    Provide ONLY the rephrased text. Do not include any introductory or concluding remarks.
+  `;
+  
+  const contents: any = {
+    parts: [
+      { text: prompt }
+    ]
+  };
 
+  if (onChunk) {
+    let fullText = '';
+    try {
+      const responseStream = await ai.models.generateContentStream({
+        model: 'gemini-3-flash-preview',
+        contents: contents,
+      });
+      for await (const chunk of responseStream) {
+        if (chunk.text) {
+          fullText += chunk.text;
+          onChunk(fullText);
+        }
+      }
+      return fullText;
+    } catch (err: any) {
+      if (err.message?.includes('403') || err.message?.includes('PERMISSION_DENIED') || err.message?.includes('429') || err.message?.includes('RESOURCE_EXHAUSTED')) {
+        console.warn("gemini-3-flash-preview failed, falling back to gemini-2.5-flash");
+        const responseStream = await ai.models.generateContentStream({
+          model: 'gemini-2.5-flash',
+          contents: contents,
+        });
+        for await (const chunk of responseStream) {
+          if (chunk.text) {
+            fullText += chunk.text;
+            onChunk(fullText);
+          }
+        }
+        return fullText;
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  let response;
+  try {
+    response = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: contents,
+    });
+  } catch (err: any) {
+    if (err.message?.includes('403') || err.message?.includes('PERMISSION_DENIED') || err.message?.includes('429') || err.message?.includes('RESOURCE_EXHAUSTED')) {
+      console.warn("gemini-3-flash-preview failed, falling back to gemini-2.5-flash");
+      response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: contents,
+      });
+    } else {
+      throw err;
+    }
+  }
+
+  return response.text || '';
+}
+
+
+export async function checkGrammar(text: string, language: string = 'English', tone: string = 'Neutral'): Promise<GrammarCheckResult> {
   const ai = getAI();
   const prompt = `
     You are an expert proofreader and editor.
@@ -419,8 +542,8 @@ export async function checkGrammar(text: string, language: string = 'English', t
       }
     });
   } catch (err: any) {
-    if (err.message?.includes('403') || err.message?.includes('PERMISSION_DENIED')) {
-      console.warn("gemini-3-flash-preview failed with 403, falling back to gemini-2.5-flash");
+    if (err.message?.includes('403') || err.message?.includes('PERMISSION_DENIED') || err.message?.includes('429') || err.message?.includes('RESOURCE_EXHAUSTED')) {
+      console.warn("gemini-3-flash-preview failed, falling back to gemini-2.5-flash");
       response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
         contents: prompt,

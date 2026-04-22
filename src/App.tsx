@@ -5,7 +5,7 @@ import { LoadingSpinner } from './components/LoadingSpinner';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { CommandPalette } from './components/CommandPalette';
 import { useAppContext } from './contexts/AppContext';
-import { MessageSquarePlus, FolderOpen, Globe2, ShieldCheck, HelpCircle, Link as LinkIcon, Info, LayoutTemplate, AlertCircle, SpellCheck, LayoutDashboard, Menu, X, Lock, Map, Database, Mic, LogOut, Calculator, Save } from 'lucide-react';
+import { MessageSquarePlus, FolderOpen, Globe2, ShieldCheck, HelpCircle, Link as LinkIcon, Info, LayoutTemplate, AlertCircle, SpellCheck, LayoutDashboard, Menu, X, Lock, Map, Database, Mic, LogOut, Calculator, Save, Waypoints, XCircle, RotateCcw, RefreshCw } from 'lucide-react';
 import { Toaster, toast } from 'react-hot-toast';
 import { db, auth } from './lib/firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
@@ -24,8 +24,10 @@ const TollGatesTab = lazy(() => import('./components/TollGatesTab').then(m => ({
 const SpeechToTextTab = lazy(() => import('./components/SpeechToTextTab').then(m => ({ default: m.SpeechToTextTab })));
 const CalculatorTab = lazy(() => import('./components/CalculatorTab').then(m => ({ default: m.CalculatorTab })));
 const BackupTab = lazy(() => import('./components/BackupTab').then(m => ({ default: m.BackupTab })));
+const WorkflowsTab = lazy(() => import('./components/WorkflowsTab').then(m => ({ default: m.WorkflowsTab })));
+const RephraseTab = lazy(() => import('./components/RephraseTab').then(m => ({ default: m.RephraseTab })));
 
-type Tab = 'dashboard' | 'draft' | 'macros' | 'translator' | 'askCaptain' | 'links' | 'templates' | 'updates' | 'grammar' | 'tollGates' | 'speechToText' | 'calculator' | 'backup';
+type Tab = 'dashboard' | 'draft' | 'macros' | 'translator' | 'askCaptain' | 'links' | 'templates' | 'updates' | 'grammar' | 'tollGates' | 'speechToText' | 'calculator' | 'backup' | 'workflows' | 'rephrase';
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -65,10 +67,12 @@ export default function App() {
     { id: 'draft', label: 'AI Draft & Save', icon: MessageSquarePlus },
     { id: 'macros', label: `Macros (${macros.length})`, icon: FolderOpen },
     { id: 'templates', label: 'Templates', icon: LayoutTemplate },
+    { id: 'workflows', label: 'Ticket Maker', icon: Waypoints },
     { id: 'updates', label: 'Updates', icon: AlertCircle },
     { id: 'translator', label: 'Translator', icon: Globe2 },
     { id: 'speechToText', label: 'Speech to Text', icon: Mic },
     { id: 'grammar', label: 'Grammar Check', icon: SpellCheck },
+    { id: 'rephrase', label: 'Rephrase Text', icon: RefreshCw },
     { id: 'askCaptain', label: 'Ask Captain', icon: HelpCircle },
     { id: 'tollGates', label: 'Toll Gates', icon: Map },
     { id: 'calculator', label: 'Calculator', icon: Calculator },
@@ -114,7 +118,7 @@ export default function App() {
             </div>
             <h1 className="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-violet-600 flex items-center gap-2">
               CS Agent
-              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 uppercase tracking-wider">v1.4</span>
+              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 uppercase tracking-wider">v1.5</span>
             </h1>
           </div>
           <button 
@@ -168,7 +172,7 @@ export default function App() {
               </div>
               <h1 className="text-base font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-violet-600 flex items-center gap-2">
                 CS Agent
-                <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 uppercase tracking-wider">v1.4</span>
+                <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 uppercase tracking-wider">v1.6</span>
               </h1>
             </div>
           </div>
@@ -177,6 +181,23 @@ export default function App() {
 
           {/* Top Right Action Buttons */}
           <div className="flex items-center gap-1 sm:gap-2 ml-auto">
+            <button
+              onClick={() => window.dispatchEvent(new CustomEvent(`cancel-${activeTab}`))}
+              className="flex items-center gap-2 px-2 sm:px-3 py-2 text-sm font-medium text-slate-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors group"
+              title="Cancel"
+            >
+              <XCircle className="w-5 h-5 text-slate-400 group-hover:text-red-600" />
+              <span className="hidden sm:inline">Cancel</span>
+            </button>
+            <button
+              onClick={() => window.dispatchEvent(new CustomEvent(`reset-${activeTab}`))}
+              className="flex items-center gap-2 px-2 sm:px-3 py-2 text-sm font-medium text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors group"
+              title="Reset"
+            >
+              <RotateCcw className="w-5 h-5 text-slate-400 group-hover:text-indigo-600" />
+              <span className="hidden sm:inline">Reset</span>
+            </button>
+            <div className="w-px h-6 bg-slate-200 mx-1 hidden sm:block"></div>
             <button
               onClick={() => {
                 setIsTutorialOpen(true);
@@ -230,10 +251,12 @@ export default function App() {
                   <div className={activeTab === 'draft' ? 'block' : 'hidden'}><DraftTab /></div>
                   <div className={activeTab === 'macros' ? 'block' : 'hidden'}><MacrosTab /></div>
                   <div className={activeTab === 'templates' ? 'block' : 'hidden'}><TemplatesTab /></div>
+                  <div className={activeTab === 'workflows' ? 'block' : 'hidden'}><WorkflowsTab /></div>
                   <div className={activeTab === 'updates' ? 'block' : 'hidden'}><UpdatesTab /></div>
                   <div className={activeTab === 'translator' ? 'block' : 'hidden'}><TranslatorTab /></div>
                   <div className={activeTab === 'speechToText' ? 'block' : 'hidden'}><SpeechToTextTab /></div>
                   <div className={activeTab === 'grammar' ? 'block' : 'hidden'}><GrammarCheckTab /></div>
+                  <div className={activeTab === 'rephrase' ? 'block' : 'hidden'}><RephraseTab /></div>
                   <div className={activeTab === 'askCaptain' ? 'block' : 'hidden'}><AskCaptainTab /></div>
                   <div className={activeTab === 'tollGates' ? 'block' : 'hidden'}><TollGatesTab /></div>
                   <div className={activeTab === 'calculator' ? 'block' : 'hidden'}><CalculatorTab /></div>

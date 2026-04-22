@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { translateText } from '../services/geminiService';
 import { Languages, Copy, CheckCircle2, RotateCcw, ImagePlus, X } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -8,6 +8,7 @@ import { Textarea } from './ui/Textarea';
 
 export function TranslatorTab() {
   const [transInput, setTransInput] = useState('');
+
   const [targetLanguage, setTargetLanguage] = useState('English');
   const [translation, setTranslation] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -26,9 +27,14 @@ export function TranslatorTab() {
       await translateText(transInput, targetLanguage, (chunk) => {
         setTranslation(chunk);
       }, image || undefined);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error translating text:', error);
-      toast.error('Failed to translate text. Please try again.');
+      const errorMessage = error?.message || String(error);
+      if (errorMessage.includes('429') || errorMessage.includes('quota') || errorMessage.includes('RESOURCE_EXHAUSTED')) {
+        toast.error('API quota exceeded. Please wait a minute and try again, or add your own API key in Settings.', { duration: 6000 });
+      } else {
+        toast.error('Failed to translate text. Please try again.');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -74,6 +80,18 @@ export function TranslatorTab() {
     reader.readAsDataURL(file);
   };
 
+
+
+  useEffect(() => {
+    const onReset = () => handleReset();
+    const onCancel = () => handleReset();
+    window.addEventListener('reset-translator', onReset);
+    window.addEventListener('cancel-translator', onCancel);
+    return () => {
+      window.removeEventListener('reset-translator', onReset);
+      window.removeEventListener('cancel-translator', onCancel);
+    };
+  }, []);
   return (
     <div className="space-y-6">
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
@@ -123,11 +141,38 @@ export function TranslatorTab() {
             )}
 
             <Textarea
-              className="h-40 resize-none bg-slate-50"
-              placeholder="Enter text here..."
+              className="h-40 resize-y bg-slate-50"
+              placeholder="Enter text here or paste an image (Ctrl+V)..."
               value={transInput}
               maxLength={5000}
               onChange={(e) => setTransInput(e.target.value)}
+              onPaste={(e) => {
+                const items = e.clipboardData?.items;
+                if (!items) return;
+                
+                for (let i = 0; i < items.length; i++) {
+                  if (items[i].type.indexOf('image') !== -1) {
+                    const file = items[i].getAsFile();
+                    if (file) {
+                      e.preventDefault(); // Prevent default paste behavior if it's an image
+                      if (file.size > 5 * 1024 * 1024) {
+                        toast.error('Image must be less than 5MB');
+                        return;
+                      }
+                      const reader = new FileReader();
+                      reader.onload = (evt) => {
+                        const result = evt.target?.result as string;
+                        const base64Data = result.split(',')[1];
+                        setImage({
+                          data: base64Data,
+                          mimeType: file.type
+                        });
+                      };
+                      reader.readAsDataURL(file);
+                    }
+                  }
+                }
+              }}
               disabled={isLoading}
             />
             <div className={`absolute bottom-3 right-3 text-xs ${transInput.length >= 4900 ? 'text-red-500 font-bold' : 'text-slate-400'}`}>

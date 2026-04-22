@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Calculator, Delete, RotateCcw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 export function CalculatorTab() {
   const [display, setDisplay] = useState('0');
+
   const [equation, setEquation] = useState('');
   const [isScientific, setIsScientific] = useState(false);
 
@@ -89,6 +90,24 @@ export function CalculatorTab() {
     }
   };
 
+
+
+  useEffect(() => {
+    const onReset = () => {
+      setDisplay('0');
+      setEquation('');
+    };
+    const onCancel = () => {
+      setDisplay('0');
+      setEquation('');
+    };
+    window.addEventListener('reset-calculator', onReset);
+    window.addEventListener('cancel-calculator', onCancel);
+    return () => {
+      window.removeEventListener('reset-calculator', onReset);
+      window.removeEventListener('cancel-calculator', onCancel);
+    };
+  }, []);
   return (
     <div className="space-y-6 max-w-md mx-auto">
       <div className="bg-slate-900 rounded-[2.5rem] shadow-2xl border-4 border-slate-800 p-6 overflow-hidden relative">

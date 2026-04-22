@@ -72,3 +72,28 @@ export interface UpdateItem {
   userId?: string;
 }
 
+export interface WorkflowOption {
+  id: string;
+  label: string;
+  nextNodeId: string | null;
+}
+
+export interface WorkflowNode {
+  id: string;
+  title: string;
+  content: string;
+  type: 'question' | 'resolution';
+  options: WorkflowOption[];
+}
+
+export interface Workflow {
+  id: string;
+  name: string;
+  description: string;
+  dateAdded: string;
+  userId?: string;
+  isFavorite?: boolean;
+  nodes: WorkflowNode[];
+  startingNodeId: string | null;
+}
+

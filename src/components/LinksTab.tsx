@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { LinkItem } from '../types';
 import { Search, Trash2, Copy, Edit2, Check, X, Plus, ExternalLink, Link2, Star } from 'lucide-react';
 import DOMPurify from 'dompurify';
@@ -10,6 +10,7 @@ import { Input } from './ui/Input';
 export function LinksTab() {
   const { links, addLink, editLink, deleteLink, toggleFavoriteLink } = useAppContext();
   const [searchQuery, setSearchQuery] = useState('');
+
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editUrl, setEditUrl] = useState('');
@@ -81,6 +82,28 @@ export function LinksTab() {
     }
   };
 
+
+
+  useEffect(() => {
+    const onReset = () => {
+      setSearchQuery('');
+      setEditUrl('');
+      setEditDescription('');
+      setNewUrl('');
+      setNewDescription('');
+    };
+    const onCancel = () => {
+      setEditingId(null);
+      setIsCreating(false);
+      onReset();
+    };
+    window.addEventListener('reset-links', onReset);
+    window.addEventListener('cancel-links', onCancel);
+    return () => {
+      window.removeEventListener('reset-links', onReset);
+      window.removeEventListener('cancel-links', onCancel);
+    };
+  }, []);
   return (
     <div className="space-y-6">
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">

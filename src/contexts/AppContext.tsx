@@ -3,11 +3,12 @@ import { useMacros } from '../hooks/useMacros';
 import { useLinks } from '../hooks/useLinks';
 import { useTemplates } from '../hooks/useTemplates';
 import { useUpdates } from '../hooks/useUpdates';
-import { Macro, LinkItem, Template, UpdateItem, Severity } from '../types';
+import { useWorkflows } from '../hooks/useWorkflows';
+import { Macro, LinkItem, Template, UpdateItem, Severity, Workflow } from '../types';
 
 /**
  * AppContext provides global state management for the application.
- * It centralizes the data fetching and state for Macros, Links, Templates, and Updates,
+ * It centralizes the data fetching and state for Macros, Links, Templates, Updates, and Workflows,
  * preventing the need for prop drilling from App.tsx down to individual tabs.
  */
 interface AppContextType {
@@ -37,6 +38,13 @@ interface AppContextType {
   saveUpdate: (title: string, content: string, severity?: Severity, link?: string, imageUrl?: string) => Promise<void>;
   deleteUpdate: (id: string) => Promise<void>;
   editUpdate: (id: string, title: string, content: string, severity?: Severity, link?: string, imageUrl?: string) => Promise<void>;
+
+  // Workflows
+  workflows: Workflow[];
+  saveWorkflow: (workflow: Omit<Workflow, 'id' | 'dateAdded' | 'userId'>) => Promise<void>;
+  editWorkflow: (id: string, updates: Partial<Workflow>) => Promise<void>;
+  deleteWorkflow: (id: string) => Promise<void>;
+  toggleFavoriteWorkflow: (id: string, currentStatus: boolean) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -46,6 +54,7 @@ export function AppContextProvider({ children }: { children: ReactNode }) {
   const linksState = useLinks();
   const templatesState = useTemplates();
   const updatesState = useUpdates();
+  const workflowsState = useWorkflows();
 
   return (
     <AppContext.Provider
@@ -57,6 +66,7 @@ export function AppContextProvider({ children }: { children: ReactNode }) {
         ...templatesState,
         toggleFavoriteTemplate: templatesState.toggleFavorite,
         ...updatesState,
+        ...workflowsState,
       }}
     >
       {children}

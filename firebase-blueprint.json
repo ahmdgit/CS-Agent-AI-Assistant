@@ -60,6 +60,25 @@
         "userId": { "type": "string" }
       },
       "required": ["id", "title", "content", "severity", "dateAdded", "userId"]
+    },
+    "Workflow": {
+      "title": "Workflow",
+      "description": "An interactive step-by-step decision tree or ticket maker.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "dateAdded": { "type": "string" },
+        "userId": { "type": "string" },
+        "isFavorite": { "type": "boolean" },
+        "nodes": {
+          "type": "array",
+          "items": { "type": "object" }
+        },
+        "startingNodeId": { "type": "string" }
+      },
+      "required": ["id", "name", "dateAdded", "userId", "nodes"]
     }
   },
   "firestore": {
@@ -78,6 +97,10 @@
     "/updates/{updateId}": {
       "schema": { "$ref": "#/entities/UpdateItem" },
       "description": "Updates collection"
+    },
+    "/workflows/{workflowId}": {
+      "schema": { "$ref": "#/entities/Workflow" },
+      "description": "Workflows collection"
     }
   }
 }

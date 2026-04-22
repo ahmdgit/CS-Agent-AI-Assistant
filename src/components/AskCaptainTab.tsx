@@ -10,6 +10,7 @@ import { Input } from './ui/Input';
 
 export function AskCaptainTab() {
   const [input, setInput] = useState('');
+
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<CaptainRequestResult | null>(null);
   const [isCopied, setIsCopied] = useState(false);
@@ -49,9 +50,14 @@ export function AskCaptainTab() {
     try {
       const draft = await generateCaptainRequest(input);
       setResult(draft);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error generating captain request:', error);
-      toast.error('Failed to generate request. Please try again.');
+      const errorMessage = error?.message || String(error);
+      if (errorMessage.includes('429') || errorMessage.includes('quota') || errorMessage.includes('RESOURCE_EXHAUSTED')) {
+        toast.error('API quota exceeded. Please wait a minute and try again, or add your own API key in Settings.', { duration: 6000 });
+      } else {
+        toast.error('Failed to generate request. Please try again.');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -73,6 +79,18 @@ export function AskCaptainTab() {
     setIsCopied(false);
   };
 
+
+
+  useEffect(() => {
+    const onReset = () => handleReset();
+    const onCancel = () => handleReset();
+    window.addEventListener('reset-askCaptain', onReset);
+    window.addEventListener('cancel-askCaptain', onCancel);
+    return () => {
+      window.removeEventListener('reset-askCaptain', onReset);
+      window.removeEventListener('cancel-askCaptain', onCancel);
+    };
+  }, []);
   return (
     <div className="space-y-6">
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
@@ -87,7 +105,7 @@ export function AskCaptainTab() {
         </p>
         <div className="relative">
           <Textarea
-            className="h-32 resize-none"
+            className="h-32 resize-y"
             placeholder="Paste text here..."
             value={input}
             maxLength={5000}
@@ -151,7 +169,7 @@ export function AskCaptainTab() {
                       label="Summary of issue"
                       value={formValues.summary}
                       onChange={(e) => handleInputChange('summary', e.target.value)}
-                      className="h-20 resize-none bg-white"
+                      className="h-20 resize-y bg-white"
                     />
                   </div>
                   
@@ -160,7 +178,7 @@ export function AskCaptainTab() {
                       label="My validation"
                       value={formValues.validation}
                       onChange={(e) => handleInputChange('validation', e.target.value)}
-                      className="h-24 resize-none bg-white"
+                      className="h-24 resize-y bg-white"
                     />
                   </div>
                   
@@ -169,7 +187,7 @@ export function AskCaptainTab() {
                       label="What I need from captain"
                       value={formValues.needsFromCaptain}
                       onChange={(e) => handleInputChange('needsFromCaptain', e.target.value)}
-                      className="h-24 resize-none bg-white"
+                      className="h-24 resize-y bg-white"
                     />
                   </div>
                 </div>
@@ -181,7 +199,7 @@ export function AskCaptainTab() {
                   <Textarea
                     readOnly
                     value={generatedText}
-                    className="h-full min-h-[250px] bg-slate-50 resize-none"
+                    className="h-full min-h-[250px] bg-slate-50 resize-y"
                     placeholder="Output will appear here..."
                   />
                   <Button

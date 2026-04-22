@@ -2,97 +2,9 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // ===============================================================
-    // Assumed Data Model
-    // ===============================================================
-    //
-    // Collection: macros
-    // Document ID: {macroId}
-    // Fields:
-    //   - id: string (required)
-    //   - summary: string (required)
-    //   - response: string (required)
-    //   - dateAdded: string (required)
-    //   - userId: string (required)
-    //
-    // Collection: links
-    // Document ID: {linkId}
-    // Fields:
-    //   - id: string (required)
-    //   - url: string (required)
-    //   - description: string (required)
-    //   - dateAdded: string (required)
-    //   - userId: string (required)
-    //
-    // Collection: templates
-    // Document ID: {templateId}
-    // Fields:
-    //   - id: string (required)
-    //   - name: string (required)
-    //   - fields: list (required)
-    //   - dateAdded: number (required)
-    //   - userId: string (required)
-    //
-    // Collection: updates
-    // Document ID: {updateId}
-    // Fields:
-    //   - id: string (required)
-    //   - title: string (required)
-    //   - content: string (required)
-    //   - severity: string (required)
-    //   - link: string (optional)
-    //   - imageUrl: string (optional)
-    //   - dateAdded: string (required)
-    //   - userId: string (required)
-    //
-    // ===============================================================
-
-    // ===============================================================
-    // Helper Functions
-    // ===============================================================
     
     function isAuthenticated() {
       return request.auth != null;
-    }
-
-    function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
-    }
-
-    function isDocOwner() {
-      return isAuthenticated() && request.auth.uid == resource.data.userId;
-    }
-
-    function uidUnchanged() {
-      return !('userId' in request.resource.data) ||
-        request.resource.data.userId == request.auth.uid;
-    }
-
-    function uidNotModified() {
-      return !('userId' in request.resource.data) ||
-        request.resource.data.userId == resource.data.userId;
-    }
-
-    function hasRequiredFields(fields) {
-      return request.resource.data.keys().hasAll(fields);
-    }
-
-    function validStringLength(field, minLen, maxLen) {
-      return request.resource.data[field] is string &&
-        request.resource.data[field].size() >= minLen &&
-        request.resource.data[field].size() <= maxLen;
-    }
-
-    function isValidOptionalString(field, minLen, maxLen) {
-      return !(field in request.resource.data) ||
-             (request.resource.data[field] is string &&
-              request.resource.data[field].size() >= minLen &&
-              request.resource.data[field].size() <= maxLen);
-    }
-
-    function isValidUrl(url) {
-      return url is string &&
-        (url.matches("^https://.*") || url.matches("^http://.*"));
     }
 
     function isValidDateString(dateStr) {
@@ -108,79 +20,88 @@ service cloud.firestore {
       return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
     }
 
-    // ===============================================================
-    // Domain Validators
-    // ===============================================================
-
     function isValidMacro(data) {
-      return hasOnlyAllowedFields(['id', 'summary', 'response', 'dateAdded', 'userId']) &&
-             validStringLength('id', 1, 100) &&
-             validStringLength('summary', 1, 1000) &&
-             validStringLength('response', 1, 10000) &&
+      return hasOnlyAllowedFields(['id', 'summary', 'response', 'dateAdded', 'userId', 'isFavorite']) &&
+             data.id is string && data.id.size() > 0 && data.id.size() <= 100 &&
+             data.summary is string && data.summary.size() > 0 && data.summary.size() <= 5000 &&
+             data.response is string && data.response.size() > 0 && data.response.size() <= 50000 &&
              isValidDateString(data.dateAdded) &&
-             data.userId == request.auth.uid;
+             (!('isFavorite' in data) || data.isFavorite is bool);
     }
 
     function isValidLink(data) {
-      return hasOnlyAllowedFields(['id', 'url', 'description', 'dateAdded', 'userId']) &&
-             validStringLength('id', 1, 100) &&
-             isValidUrl(data.url) &&
-             validStringLength('description', 1, 1000) &&
+      return hasOnlyAllowedFields(['id', 'url', 'description', 'dateAdded', 'userId', 'isFavorite']) &&
+             data.id is string && data.id.size() > 0 && data.id.size() <= 100 &&
+             data.url is string && (data.url.matches("^https://.*") || data.url.matches("^http://.*")) &&
+             data.description is string && data.description.size() > 0 && data.description.size() <= 5000 &&
              isValidDateString(data.dateAdded) &&
-             data.userId == request.auth.uid;
+             (!('isFavorite' in data) || data.isFavorite is bool);
     }
 
     function isValidTemplate(data) {
-      return hasOnlyAllowedFields(['id', 'name', 'fields', 'dateAdded', 'userId']) &&
-             validStringLength('id', 1, 100) &&
-             validStringLength('name', 1, 200) &&
-             data.fields is list && data.fields.size() <= 100 &&
+      return hasOnlyAllowedFields(['id', 'name', 'fields', 'dateAdded', 'userId', 'isFavorite']) &&
+             data.id is string && data.id.size() > 0 && data.id.size() <= 100 &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 1000 &&
+             data.fields is list && data.fields.size() <= 500 &&
              data.dateAdded is number &&
-             data.userId == request.auth.uid;
+             (!('isFavorite' in data) || data.isFavorite is bool);
     }
 
     function isValidUpdate(data) {
       return hasOnlyAllowedFields(['id', 'title', 'content', 'severity', 'link', 'imageUrl', 'dateAdded', 'userId']) &&
-             validStringLength('id', 1, 100) &&
-             validStringLength('title', 1, 200) &&
-             validStringLength('content', 1, 10000) &&
-             data.severity in ['Low', 'Medium', 'High', 'Critical'] &&
-             isValidOptionalString('link', 0, 1000) &&
-             isValidOptionalString('imageUrl', 0, 1000) &&
-             isValidDateString(data.dateAdded) &&
-             data.userId == request.auth.uid;
+             data.id is string && data.id.size() > 0 && data.id.size() <= 100 &&
+             data.title is string && data.title.size() > 0 && data.title.size() <= 1000 &&
+             data.content is string && data.content.size() > 0 && data.content.size() <= 50000 &&
+             (!('severity' in data) || data.severity in ['Low', 'Medium', 'High', 'Critical']) &&
+             (!('link' in data) || (data.link is string && data.link.size() <= 2000)) &&
+             (!('imageUrl' in data) || (data.imageUrl is string && data.imageUrl.size() <= 2000)) &&
+             isValidDateString(data.dateAdded);
     }
 
-    // ===============================================================
-    // Rules
-    // ===============================================================
+    function isValidWorkflow(data) {
+      return hasOnlyAllowedFields(['id', 'name', 'description', 'dateAdded', 'userId', 'isFavorite', 'nodes', 'startingNodeId']) &&
+             data.id is string && data.id.size() > 0 && data.id.size() <= 100 &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 1000 &&
+             (!('description' in data) || (data.description is string && data.description.size() <= 10000)) &&
+             isValidDateString(data.dateAdded) &&
+             (!('isFavorite' in data) || data.isFavorite is bool) &&
+             data.nodes is list && data.nodes.size() <= 1000 &&
+             (!('startingNodeId' in data) || data.startingNodeId == null || (data.startingNodeId is string && data.startingNodeId.size() <= 100));
+    }
 
     match /macros/{macroId} {
-      allow read: if isDocOwner();
-      allow create: if isAuthenticated() && isValidMacro(request.resource.data) && uidUnchanged();
-      allow update: if isDocOwner() && isValidMacro(request.resource.data) && uidNotModified() && areImmutableFieldsUnchanged(['id', 'dateAdded']);
-      allow delete: if isDocOwner();
+      allow read: if request.auth != null && request.auth.uid == resource.data.userId;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.userId && isValidMacro(request.resource.data);
+      allow update: if request.auth != null && request.auth.uid == resource.data.userId && request.auth.uid == request.resource.data.userId && isValidMacro(request.resource.data) && areImmutableFieldsUnchanged(['id']);
+      allow delete: if request.auth != null && request.auth.uid == resource.data.userId;
     }
 
     match /links/{linkId} {
-      allow read: if isDocOwner();
-      allow create: if isAuthenticated() && isValidLink(request.resource.data) && uidUnchanged();
-      allow update: if isDocOwner() && isValidLink(request.resource.data) && uidNotModified() && areImmutableFieldsUnchanged(['id', 'dateAdded']);
-      allow delete: if isDocOwner();
+      allow read: if request.auth != null && request.auth.uid == resource.data.userId;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.userId && isValidLink(request.resource.data);
+      allow update: if request.auth != null && request.auth.uid == resource.data.userId && request.auth.uid == request.resource.data.userId && isValidLink(request.resource.data) && areImmutableFieldsUnchanged(['id']);
+      allow delete: if request.auth != null && request.auth.uid == resource.data.userId;
     }
 
     match /templates/{templateId} {
-      allow read: if isDocOwner();
-      allow create: if isAuthenticated() && isValidTemplate(request.resource.data) && uidUnchanged();
-      allow update: if isDocOwner() && isValidTemplate(request.resource.data) && uidNotModified() && areImmutableFieldsUnchanged(['id', 'dateAdded']);
-      allow delete: if isDocOwner();
+      allow read: if request.auth != null && request.auth.uid == resource.data.userId;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.userId && isValidTemplate(request.resource.data);
+      allow update: if request.auth != null && request.auth.uid == resource.data.userId && request.auth.uid == request.resource.data.userId && isValidTemplate(request.resource.data) && areImmutableFieldsUnchanged(['id']);
+      allow delete: if request.auth != null && request.auth.uid == resource.data.userId;
     }
 
     match /updates/{updateId} {
-      allow read: if isDocOwner();
-      allow create: if isAuthenticated() && isValidUpdate(request.resource.data) && uidUnchanged();
-      allow update: if isDocOwner() && isValidUpdate(request.resource.data) && uidNotModified() && areImmutableFieldsUnchanged(['id', 'dateAdded']);
-      allow delete: if isDocOwner();
+      allow read: if request.auth != null && request.auth.uid == resource.data.userId;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.userId && isValidUpdate(request.resource.data);
+      allow update: if request.auth != null && request.auth.uid == resource.data.userId && request.auth.uid == request.resource.data.userId && isValidUpdate(request.resource.data) && areImmutableFieldsUnchanged(['id']);
+      allow delete: if request.auth != null && request.auth.uid == resource.data.userId;
+    }
+
+    match /workflows/{workflowId} {
+      allow read: if request.auth != null && request.auth.uid == resource.data.userId;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.userId && isValidWorkflow(request.resource.data);
+      allow update: if request.auth != null && request.auth.uid == resource.data.userId && request.auth.uid == request.resource.data.userId && isValidWorkflow(request.resource.data) && areImmutableFieldsUnchanged(['id']);
+      allow delete: if request.auth != null && request.auth.uid == resource.data.userId;
     }
   }
 }

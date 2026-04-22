@@ -3,6 +3,7 @@ import { UpdateItem, Severity } from '../types';
 import { collection, onSnapshot, doc, setDoc, deleteDoc, updateDoc, query, orderBy, where } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
+import toast from 'react-hot-toast';
 
 export function useUpdates() {
   const [updates, setUpdates] = useState<UpdateItem[]>([]);
@@ -15,6 +16,54 @@ export function useUpdates() {
     });
     return () => unsubscribe();
   }, []);
+
+  // Migrate local updates to Firebase
+  useEffect(() => {
+    if (!db || !userId) return;
+    
+    const migrateLocalData = async () => {
+      const keysToCheck = ['updates', 'savedUpdates', 'cs-agent-updates'];
+      for (const key of keysToCheck) {
+        const localDataStr = localStorage.getItem(key);
+        if (localDataStr) {
+          try {
+            const localData = JSON.parse(localDataStr);
+            if (Array.isArray(localData) && localData.length > 0) {
+              let migratedCount = 0;
+              for (const item of localData) {
+                if (item.title && item.content) {
+                  const newId = item.id || crypto.randomUUID();
+                  const docRef = doc(db, 'updates', newId);
+                  
+                  const newItem = {
+                    id: newId,
+                    title: item.title,
+                    content: item.content,
+                    userId: userId,
+                    dateAdded: typeof item.dateAdded === 'string' ? item.dateAdded : new Date(item.dateAdded || Date.now()).toISOString(),
+                    ...(item.severity ? { severity: item.severity } : {}),
+                    ...(item.link ? { link: item.link } : {}),
+                    ...(item.imageUrl ? { imageUrl: item.imageUrl } : {})
+                  };
+                  await setDoc(docRef, newItem, { merge: true });
+                  migratedCount++;
+                }
+              }
+              if (migratedCount > 0) {
+                toast.success(`Restored ${migratedCount} updates from local storage!`);
+              }
+            }
+            localStorage.setItem(`${key}_migrated`, localDataStr);
+            localStorage.removeItem(key);
+          } catch (e) {
+            console.error(`Failed to migrate local data for key ${key}`, e);
+          }
+        }
+      }
+    };
+
+    migrateLocalData();
+  }, [userId]);
 
   useEffect(() => {
     if (!db || !userId) {

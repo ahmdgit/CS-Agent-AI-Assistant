@@ -12,6 +12,7 @@ import { Textarea } from './ui/Textarea';
 export function UpdatesTab() {
   const { updates, deleteUpdate, editUpdate, saveUpdate } = useAppContext();
   const [searchQuery, setSearchQuery] = useState('');
+
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -37,7 +38,9 @@ export function UpdatesTab() {
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+  
+
+  return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
   const filteredUpdates = useMemo(() => updates.filter(
@@ -317,6 +320,32 @@ export function UpdatesTab() {
     e.target.value = '';
   };
 
+  useEffect(() => {
+    const onReset = () => {
+      setSearchQuery('');
+      setEditTitle('');
+      setEditContent('');
+      setEditSeverity('Medium');
+      setEditLink('');
+      setEditImageUrl('');
+      setNewTitle('');
+      setNewContent('');
+      setNewSeverity('Medium');
+      setNewLink('');
+      setNewImageUrl('');
+    };
+    const onCancel = () => {
+      setEditingId(null);
+      setIsCreating(false);
+      onReset();
+    };
+    window.addEventListener('reset-updates', onReset);
+    window.addEventListener('cancel-updates', onCancel);
+    return () => {
+      window.removeEventListener('reset-updates', onReset);
+      window.removeEventListener('cancel-updates', onCancel);
+    };
+  }, []);
   return (
     <div className="space-y-6">
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">

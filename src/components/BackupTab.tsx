@@ -1,14 +1,14 @@
 import React, { useState, useRef } from 'react';
 import { Database, Download, Upload, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { Macro, LinkItem, Template, UpdateItem } from '../types';
+import { Macro, LinkItem, Template, UpdateItem, Workflow } from '../types';
 import { collection, getDocs, writeBatch, doc } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
 import { useAppContext } from '../contexts/AppContext';
 import { Button } from './ui/Button';
 
 export function BackupTab() {
-  const { macros, links, templates, updates } = useAppContext();
+  const { macros, links, templates, updates, workflows } = useAppContext();
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -17,13 +17,14 @@ export function BackupTab() {
     setIsExporting(true);
     try {
       const backupData = {
-        version: '1.4',
+        version: '1.5',
         timestamp: new Date().toISOString(),
         data: {
           macros,
           links,
           templates,
-          updates
+          updates,
+          workflows
         }
       };
 
@@ -69,11 +70,30 @@ export function BackupTab() {
       // We will use a batch to write all data to Firestore
       const batch = writeBatch(db);
 
+      // Helper to ensure valid date string
+      const getValidDateString = (dateVal: any) => {
+        try {
+          const d = new Date(dateVal);
+          if (isNaN(d.getTime())) return new Date().toISOString();
+          return d.toISOString();
+        } catch {
+          return new Date().toISOString();
+        }
+      };
+
       // Import Macros
       if (data.macros && Array.isArray(data.macros)) {
         data.macros.forEach((m: Macro) => {
           const ref = doc(db, 'macros', m.id);
-          batch.set(ref, { ...m, userId });
+          const sanitizedMacro = {
+            id: m.id,
+            summary: m.summary,
+            response: m.response,
+            dateAdded: getValidDateString(m.dateAdded),
+            userId,
+            ...(m.isFavorite !== undefined ? { isFavorite: m.isFavorite } : {})
+          };
+          batch.set(ref, sanitizedMacro, { merge: true });
         });
       }
 
@@ -81,7 +101,15 @@ export function BackupTab() {
       if (data.links && Array.isArray(data.links)) {
         data.links.forEach((l: LinkItem) => {
           const ref = doc(db, 'links', l.id);
-          batch.set(ref, { ...l, userId });
+          const sanitizedLink = {
+            id: l.id,
+            url: l.url,
+            description: l.description,
+            dateAdded: getValidDateString(l.dateAdded),
+            userId,
+            ...(l.isFavorite !== undefined ? { isFavorite: l.isFavorite } : {})
+          };
+          batch.set(ref, sanitizedLink, { merge: true });
         });
       }
 
@@ -89,7 +117,15 @@ export function BackupTab() {
       if (data.templates && Array.isArray(data.templates)) {
         data.templates.forEach((t: Template) => {
           const ref = doc(db, 'templates', t.id);
-          batch.set(ref, { ...t, userId });
+          const sanitizedTemplate = {
+            id: t.id,
+            name: t.name,
+            fields: t.fields || [],
+            dateAdded: typeof t.dateAdded === 'number' ? t.dateAdded : Date.now(),
+            userId,
+            ...(t.isFavorite !== undefined ? { isFavorite: t.isFavorite } : {})
+          };
+          batch.set(ref, sanitizedTemplate, { merge: true });
         });
       }
 
@@ -97,7 +133,35 @@ export function BackupTab() {
       if (data.updates && Array.isArray(data.updates)) {
         data.updates.forEach((u: UpdateItem) => {
           const ref = doc(db, 'updates', u.id);
-          batch.set(ref, { ...u, userId });
+          const sanitizedUpdate = {
+            id: u.id,
+            title: u.title,
+            content: u.content,
+            dateAdded: getValidDateString(u.dateAdded),
+            userId,
+            ...(u.severity ? { severity: u.severity } : {}),
+            ...(u.link ? { link: u.link } : {}),
+            ...(u.imageUrl ? { imageUrl: u.imageUrl } : {})
+          };
+          batch.set(ref, sanitizedUpdate, { merge: true });
+        });
+      }
+
+      // Import Workflows
+      if (data.workflows && Array.isArray(data.workflows)) {
+        data.workflows.forEach((w: Workflow) => {
+          const ref = doc(db, 'workflows', w.id);
+          const sanitizedWorkflow = {
+            id: w.id,
+            name: w.name,
+            nodes: w.nodes || [],
+            dateAdded: getValidDateString(w.dateAdded),
+            userId,
+            ...(w.description ? { description: w.description } : {}),
+            ...(w.isFavorite !== undefined ? { isFavorite: w.isFavorite } : {}),
+            ...(w.startingNodeId ? { startingNodeId: w.startingNodeId } : {})
+          };
+          batch.set(ref, sanitizedWorkflow, { merge: true });
         });
       }
 

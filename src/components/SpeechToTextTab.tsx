@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Mic, Upload, FileAudio, Loader2 } from 'lucide-react';
 import { transcribeAudio } from '../services/geminiService';
 import { toast } from 'react-hot-toast';
@@ -14,6 +14,7 @@ interface AudioFileItem {
 
 export function SpeechToTextTab() {
   const [audioFiles, setAudioFiles] = useState<AudioFileItem[]>([]);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -97,12 +98,17 @@ export function SpeechToTextTab() {
         setAudioFiles(prev => prev.map(f => 
           f.id === audioItem.id ? { ...f, status: 'done', transcript: result } : f
         ));
-      } catch (error) {
+      } catch (error: any) {
         console.error(error);
         setAudioFiles(prev => prev.map(f => 
           f.id === audioItem.id ? { ...f, status: 'error', transcript: '' } : f
         ));
-        toast.error(`Failed to transcribe ${audioItem.file.name}`);
+        const errorMessage = error?.message || String(error);
+        if (errorMessage.includes('429') || errorMessage.includes('quota') || errorMessage.includes('RESOURCE_EXHAUSTED')) {
+          toast.error('API quota exceeded. Please wait a minute and try again, or add your own API key in Settings.', { duration: 6000 });
+        } else {
+          toast.error(`Failed to transcribe ${audioItem.file.name}`);
+        }
       }
     }));
   };
@@ -110,6 +116,22 @@ export function SpeechToTextTab() {
   const isTranscribingAny = audioFiles.some(f => f.status === 'transcribing');
   const hasFilesToTranscribe = audioFiles.some(f => f.status === 'idle' || f.status === 'error');
 
+
+
+  useEffect(() => {
+    const onReset = () => {
+      setAudioFiles([]);
+    };
+    const onCancel = () => {
+      setAudioFiles([]);
+    };
+    window.addEventListener('reset-speechToText', onReset);
+    window.addEventListener('cancel-speechToText', onCancel);
+    return () => {
+      window.removeEventListener('reset-speechToText', onReset);
+      window.removeEventListener('cancel-speechToText', onCancel);
+    };
+  }, []);
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3 mb-6">
