@@ -9,12 +9,12 @@ export default defineConfig(({mode}) => {
     base: '/CS-Agent-AI-Assistant/',
     plugins: [react(), tailwindcss()],
     define: {
-      'process.env.GEMINI_API_KEY_1': JSON.stringify(env.GEMINI_API_KEY_1),
-      'process.env.GEMINI_API_KEY_2': JSON.stringify(env.GEMINI_API_KEY_2),
-      'process.env.GEMINI_API_KEY_3': JSON.stringify(env.GEMINI_API_KEY_3),
-      'process.env.GEMINI_API_KEY_4': JSON.stringify(env.GEMINI_API_KEY_4),
-      'process.env.GEMINI_API_KEY_5': JSON.stringify(env.GEMINI_API_KEY_5),
-      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
+      'import.meta.env.GEMINI_API_KEY_1': JSON.stringify(env.GEMINI_API_KEY_1),
+      'import.meta.env.GEMINI_API_KEY_2': JSON.stringify(env.GEMINI_API_KEY_2),
+      'import.meta.env.GEMINI_API_KEY_3': JSON.stringify(env.GEMINI_API_KEY_3),
+      'import.meta.env.GEMINI_API_KEY_4': JSON.stringify(env.GEMINI_API_KEY_4),
+      'import.meta.env.GEMINI_API_KEY_5': JSON.stringify(env.GEMINI_API_KEY_5),
+      'import.meta.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
     },
     resolve: {
       alias: {

@@ -2,21 +2,29 @@ import { GoogleGenAI, Type } from '@google/genai';
 import { DraftResult, Sentiment, CaptainRequestResult, GrammarCheckResult } from '../types';
 
 // Define an array of API keys for fallback route.
-// Load from environment variables only - NEVER hardcode keys!
+// Load from environment variables injected by Vite at build time
 const getApiKeys = (): string[] => {
   const keys: string[] = [];
   
-  // Load multiple API keys from environment variables
+  // Load multiple API keys from environment variables (injected by Vite)
   // Expected format: GEMINI_API_KEY_1, GEMINI_API_KEY_2, etc.
   let keyIndex = 1;
-  while (process.env[`GEMINI_API_KEY_${keyIndex}`]) {
-    keys.push(process.env[`GEMINI_API_KEY_${keyIndex}`]!);
+  while (true) {
+    const keyName = `GEMINI_API_KEY_${keyIndex}`;
+    // @ts-ignore - Vite injects these dynamically
+    const key = (import.meta.env as any)[keyName];
+    if (!key) break;
+    keys.push(key);
     keyIndex++;
   }
   
   // Fallback to single GEMINI_API_KEY if set
-  if (keys.length === 0 && process.env.GEMINI_API_KEY) {
-    keys.push(process.env.GEMINI_API_KEY);
+  if (keys.length === 0) {
+    // @ts-ignore - Vite injects this dynamically
+    const fallbackKey = (import.meta.env as any).GEMINI_API_KEY;
+    if (fallbackKey) {
+      keys.push(fallbackKey);
+    }
   }
   
   if (keys.length === 0) {
