@@ -5,32 +5,32 @@ import { DraftResult, Sentiment, CaptainRequestResult, GrammarCheckResult } from
 // Load from environment variables injected by Vite at build time
 const getApiKeys = (): string[] => {
   const keys: string[] = [];
-  
-  // Load multiple API keys from environment variables (injected by Vite)
-  // Expected format: GEMINI_API_KEY_1, GEMINI_API_KEY_2, etc.
-  let keyIndex = 1;
-  while (true) {
-    const keyName = `GEMINI_API_KEY_${keyIndex}`;
-    // @ts-ignore - Vite injects these dynamically
-    const key = (import.meta.env as any)[keyName];
-    if (!key) break;
-    keys.push(key);
-    keyIndex++;
+
+  // IMPORTANT: Vite does static string replacement at build time.
+  // Dynamic bracket notation like (import.meta.env as any)[keyName] does NOT work.
+  // Keys must be accessed directly so Vite can inject the values at build time.
+  const k1 = import.meta.env.GEMINI_API_KEY_1;
+  const k2 = import.meta.env.GEMINI_API_KEY_2;
+  const k3 = import.meta.env.GEMINI_API_KEY_3;
+  const k4 = import.meta.env.GEMINI_API_KEY_4;
+  const k5 = import.meta.env.GEMINI_API_KEY_5;
+  const kFallback = import.meta.env.GEMINI_API_KEY;
+
+  if (k1) keys.push(k1);
+  if (k2) keys.push(k2);
+  if (k3) keys.push(k3);
+  if (k4) keys.push(k4);
+  if (k5) keys.push(k5);
+
+  // Fallback to single GEMINI_API_KEY if no numbered keys found
+  if (keys.length === 0 && kFallback) {
+    keys.push(kFallback);
   }
-  
-  // Fallback to single GEMINI_API_KEY if set
-  if (keys.length === 0) {
-    // @ts-ignore - Vite injects this dynamically
-    const fallbackKey = (import.meta.env as any).GEMINI_API_KEY;
-    if (fallbackKey) {
-      keys.push(fallbackKey);
-    }
-  }
-  
+
   if (keys.length === 0) {
     console.warn('⚠️  No Gemini API keys found in environment variables. Please set GEMINI_API_KEY or GEMINI_API_KEY_1, GEMINI_API_KEY_2, etc.');
   }
-  
+
   return keys;
 };
 
