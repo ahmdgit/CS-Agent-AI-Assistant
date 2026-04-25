@@ -2,14 +2,31 @@ import { GoogleGenAI, Type } from '@google/genai';
 import { DraftResult, Sentiment, CaptainRequestResult, GrammarCheckResult } from '../types';
 
 // Define an array of API keys for fallback route.
-const apiKeys = [
-  "AIzaSyB3yMdd_hbiHfVHuQxgEcnjpQEaz9_Zd0U",
-  "AIzaSyBIDLhrLpZl2r5WqwndDCXmPacpwYg87NE",
-  "AIzaSyD9n7t8sMxoT0V5KcKo5ZtByZnSMfqgftI",
-  "AIzaSyDJmreGlmpXzxJ5rimYlI1k4C7w1QomASc",
-  "AIzaSyDzt0vGp0eqJA65T3uFx0Pp5WDxXANtbaE",
-  process.env.GEMINI_API_KEY // Backup environment variable just in case
-].filter(Boolean) as string[];
+// Load from environment variables only - NEVER hardcode keys!
+const getApiKeys = (): string[] => {
+  const keys: string[] = [];
+  
+  // Load multiple API keys from environment variables
+  // Expected format: GEMINI_API_KEY_1, GEMINI_API_KEY_2, etc.
+  let keyIndex = 1;
+  while (process.env[`GEMINI_API_KEY_${keyIndex}`]) {
+    keys.push(process.env[`GEMINI_API_KEY_${keyIndex}`]!);
+    keyIndex++;
+  }
+  
+  // Fallback to single GEMINI_API_KEY if set
+  if (keys.length === 0 && process.env.GEMINI_API_KEY) {
+    keys.push(process.env.GEMINI_API_KEY);
+  }
+  
+  if (keys.length === 0) {
+    console.warn('⚠️  No Gemini API keys found in environment variables. Please set GEMINI_API_KEY or GEMINI_API_KEY_1, GEMINI_API_KEY_2, etc.');
+  }
+  
+  return keys;
+};
+
+const apiKeys = getApiKeys();
 
 let currentApiKeyIndex = 0;
 
@@ -21,7 +38,7 @@ function getAI() {
   return new GoogleGenAI({ apiKey });
 }
 
-// Custom wrapper to execute calls and seamlessly rotate keys on Quota Exhaustion
+// Custom wrapper to execute calls and seamlessly rotate keys on Quota Exhaustion or API Key Expiration
 async function executeWithFallback<T>(callFunc: (ai: GoogleGenAI) => Promise<T>): Promise<T> {
   const maxAttempts = apiKeys.length;
   let attempts = 0;
@@ -34,23 +51,32 @@ async function executeWithFallback<T>(callFunc: (ai: GoogleGenAI) => Promise<T>)
     } catch (err: any) {
       lastError = err;
       const errorMessage = err.message || "";
-      // Check if the error is related to Quota or Rate Limits
-      if (
+      const errorStatus = err.status || "";
+      
+      // Check if error is related to Quota, Rate Limits, or Expired API Key
+      const isQuotaError = 
         errorMessage.includes('429') || 
         errorMessage.includes('quota') || 
-        errorMessage.includes('RESOURCE_EXHAUSTED')
-      ) {
-        console.warn(`API Key ${currentApiKeyIndex + 1} exhausted. Failing over to next key...`);
+        errorMessage.includes('RESOURCE_EXHAUSTED');
+      
+      const isExpiredKeyError = 
+        errorMessage.includes('API key expired') || 
+        errorMessage.includes('API_KEY_INVALID') ||
+        (errorMessage.includes('400') && (errorMessage.includes('INVALID_ARGUMENT') || errorMessage.includes('invalid')));
+      
+      if (isQuotaError || isExpiredKeyError) {
+        const reason = isExpiredKeyError ? 'expired' : 'exhausted';
+        console.warn(`API Key ${currentApiKeyIndex + 1} ${reason}. Failing over to next key...`);
         currentApiKeyIndex = (currentApiKeyIndex + 1) % apiKeys.length; // Move to the next key
         attempts++;
       } else {
-        // If it's a different error (like a bad request or 403), throw immediately
+        // If it's a different error (like a bad request or authentication), throw immediately
         throw err;
       }
     }
   }
 
-  throw new Error("All available API keys have exhausted their quota: " + (lastError?.message || ""));
+  throw new Error("All available API keys are invalid or exhausted: " + (lastError?.message || ""));
 }
 
 export async function generateDraft(
